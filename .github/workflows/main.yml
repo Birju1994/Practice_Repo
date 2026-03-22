@@ -10,7 +10,7 @@ on:
 jobs:
   Mera_Pahla_Resoruce:
     name: Dhondhu
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - name: Install Terraform
         uses: little-core-labs/install-terraform@v2.0.0
