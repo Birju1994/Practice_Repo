@@ -1,0 +1,20 @@
+name: "Azure Resource"
+
+
+on: 
+  push:
+    branches:
+      - main
+      - feature
+
+jobs:
+  Mera_Pahla_Resoruce:
+    name: Dhondhu
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Terraform
+        uses: little-core-labs/install-terraform@v2.0.0
+        with:
+          version: 1.22.0
+          
+
