@@ -1,17 +1,19 @@
 name: Resource Group Decommission
 description: Request to decommission an Azure Resource Group
-title: " Resoruce Group - Decommission"
+title: "[Resource Group - Decommission]"
 labels:
-  - azure-rg-decommision
+  - azure-rg-decommission
 
 body:
-- type: markdown
-  attributes:
-    value: "## Welcome!"
-- type: markdown
-  attributes:
-    value: |
-      Thanks for taking the time to fill out this bug! If you need real-time help, join us on Discord.
+  - type: markdown
+    attributes:
+      value: "## Resource Group Decommission"
+
+  - type: markdown
+    attributes:
+      value: |
+        Please provide the required information for the Resource Group decommission request.
+
   - type: input
     id: resource-group
     attributes:
