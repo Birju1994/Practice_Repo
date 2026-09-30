@@ -1,4 +1,4 @@
-name: Resource Group Decommission
+name: Resource Group Deletion
 description: Request to decommission an Azure Resource Group
 title: "[Resource Group - Decommission]"
 labels:
