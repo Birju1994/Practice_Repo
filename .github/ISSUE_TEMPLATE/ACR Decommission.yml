@@ -1,0 +1,78 @@
+name: ACR Decommission
+description: Request to decommission an Azure Container Registry
+title: "[ACR - Decommission]"
+labels:
+  - azure-acr-decommission
+
+body:
+  - type: markdown
+    attributes:
+      value: "## Azure Container Registry Decommission"
+
+  - type: markdown
+    attributes:
+      value: |
+        Please provide the required information for the Azure Container Registry decommission request.
+
+  - type: input
+    id: acr-name
+    attributes:
+      label: ACR Name
+      description: Enter the name of the Azure Container Registry to be decommissioned.
+      placeholder: "acr-example-prod"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: location
+    attributes:
+      label: Location
+      description: Select the Azure region where the ACR is located.
+      options:
+        - East US
+        - West US
+        - Central US
+        - North Europe
+        - West Europe
+        - UK South
+        - Southeast Asia
+        - Australia East
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: ritm
+    attributes:
+      label: RITM
+      description: Enter the RITM number associated with this decommission request.
+      placeholder: "RITM1234567"
+    validations:
+      required: true
+
+  - type: input
+    id: dso
+    attributes:
+      label: DSO
+      description: Enter the DSO details.
+      placeholder: "Enter DSO"
+    validations:
+      required: true
+
+  - type: textarea
+    id: reason
+    attributes:
+      label: Decommission Reason
+      description: Provide the reason for decommissioning the Azure Container Registry.
+      placeholder: "Example: ACR is no longer required because the application has been migrated."
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Confirmation
+      description: Please confirm before submitting the ACR decommission request.
+      options:
+        - label: I confirm that the above Azure Container Registry is approved for decommissioning.
+          required: true
