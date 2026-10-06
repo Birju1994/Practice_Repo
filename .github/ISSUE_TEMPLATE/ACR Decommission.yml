@@ -118,5 +118,26 @@ body:
           - RBAC Registry Permissions
     validations:
         required: true
+  - type: dropdown
+    id: network-access
+    attributes:
+      label: Network Access
+      description: |
+        Select the network connectivity model for the ACR.
+
+        Public Access:
+        ACR is accessible through its public endpoint.
+
+        Selected Networks:
+        Restrict public access to approved IP addresses or networks.
+
+        Private Endpoint:
+        Access ACR privately through an Azure Virtual Network.
+      options:
+        - Public Access
+        - Selected Networks
+        - Private Endpoint
+    validations:
+      required: true
       
       
