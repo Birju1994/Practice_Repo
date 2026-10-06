@@ -30,21 +30,6 @@ body:
          - Data & Analytics PaaS Non-Prod
          - Data & Analytics PaaS Prod
        default: 0
-
-  - type: input
-    id: storage_account_name
-    attributes:
-      label: storage_account_name
-      description: "Storage account name to be created. Must be unique across Azure."
-        Format: az{yy}{appid}stg{nn}{env}
-        - yy = year (e.g., 26 for 2026)
-        - appid = 2-10 lowercase characters (letters and numbers allowed)
-        - nn = instance number (e.g., 01, 02, etc.)
-        - env = environment (e.g., p for production, np for non-production)
-      placeholder: az26myappstg01p
-      value: az26myappstg01p
-    validations:
-       required: true
   - type: dropdown
     id: role_assignment_permissions_mode
     attributes:
