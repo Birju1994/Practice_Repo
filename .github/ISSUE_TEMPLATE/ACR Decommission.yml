@@ -6,28 +6,24 @@ labels:
 
 body:
 
-  - type: markdown
-    attributes:
-      value: |
-        ## Azure Container Registry Deployment
-
-        Please provide all required information for the Azure Container Registry deployment request.
-
-  # --------------------------------------------------
+  # ==================================================
   # PROJECT DETAILS
-  # --------------------------------------------------
+  # ==================================================
 
   - type: markdown
     attributes:
       value: |
-        ### Project Details
+        ## Project Details
 
-  - type: input
+  - type: dropdown
     id: subscription
     attributes:
       label: Azure Subscription
-      description: Enter the Azure Subscription name or Subscription ID.
-      placeholder: Azure subscription 1
+      description: Select the Azure subscription for the ACR deployment.
+      options:
+        - Azure subscription 1
+        - Azure subscription 2
+        - Azure subscription 3
     validations:
       required: true
 
@@ -35,19 +31,20 @@ body:
     id: resource-group
     attributes:
       label: Resource Group
-      description: Enter the existing Azure Resource Group where the ACR will be deployed.
+      description: Enter the existing Azure Resource Group name.
       placeholder: rg-project-dev
     validations:
       required: true
 
-  # --------------------------------------------------
+
+  # ==================================================
   # INSTANCE DETAILS
-  # --------------------------------------------------
+  # ==================================================
 
   - type: markdown
     attributes:
       value: |
-        ### Instance Details
+        ## Instance Details
 
   - type: input
     id: registry-name
@@ -64,7 +61,7 @@ body:
     id: location
     attributes:
       label: Location
-      description: Select the Azure region where the ACR will be deployed.
+      description: Select the Azure region for the ACR.
       options:
         - East US
         - West US
@@ -81,27 +78,18 @@ body:
     id: domain-label-scope
     attributes:
       label: Domain Name Label Scope
-      description: Select the required domain name label scope configuration.
+      description: Select the required domain name label scope.
       options:
         - Unsecure
         - Secure
     validations:
       required: true
 
-  - type: checkboxes
-    id: availability-zones
-    attributes:
-      label: Availability Zones
-      description: Enable availability zones where supported by the selected region and SKU.
-      options:
-        - label: Enable availability zones
-          required: false
-
   - type: dropdown
     id: pricing-plan
     attributes:
       label: Pricing Plan
-      description: Select the ACR pricing tier.
+      description: Select the ACR SKU.
       options:
         - Basic
         - Standard
@@ -113,16 +101,93 @@ body:
     id: role-assignment-permissions
     attributes:
       label: Role Assignment Permissions Mode
-      description: Select the required ACR permissions model.
+      description: Select the required repository authorization model.
       options:
         - RBAC Registry + ABAC Repository Permissions
         - RBAC Registry Permissions
     validations:
       required: true
 
-  # --------------------------------------------------
+  - type: checkboxes
+    id: availability-zones
+    attributes:
+      label: Availability Zones
+      description: Enable availability zones if supported by the selected region and configuration.
+      options:
+        - label: Enable Availability Zones
+          required: false
+
+
+  # ==================================================
+  # NETWORK CONNECTIVITY
+  # ==================================================
+
+  - type: markdown
+    attributes:
+      value: |
+        ## Network Connectivity
+
+        Select how the Azure Container Registry should be accessed from
+        applications, AKS, build agents, and other Azure resources.
+
+  - type: dropdown
+    id: network-access
+    attributes:
+      label: Network Access
+      description: |
+        Select the network connectivity model for the ACR.
+
+        Public Access:
+        ACR is accessible through its public endpoint.
+
+        Selected Networks:
+        Restrict public access to approved IP addresses or networks.
+
+        Private Endpoint:
+        Access ACR privately through an Azure Virtual Network.
+      options:
+        - Public Access
+        - Selected Networks
+        - Private Endpoint
+    validations:
+      required: true
+
+  - type: input
+    id: vnet-name
+    attributes:
+      label: Virtual Network Name
+      description: Required when Private Endpoint is selected.
+      placeholder: vnet-project-dev
+    validations:
+      required: false
+
+  - type: input
+    id: subnet-name
+    attributes:
+      label: Subnet Name
+      description: Required when Private Endpoint is selected.
+      placeholder: snet-private-endpoint
+    validations:
+      required: false
+
+  - type: textarea
+    id: allowed-network
+    attributes:
+      label: Allowed IP Addresses / Networks
+      description: |
+        Required when Selected Networks is selected.
+        Enter approved public IP addresses or CIDR ranges.
+      placeholder: |
+        Example:
+        10.10.10.0/24
+        20.30.40.50/32
+    validations:
+      required: false
+
+
+  # ==================================================
   # ENVIRONMENT
-  # --------------------------------------------------
+  # ==================================================
 
   - type: dropdown
     id: environment
@@ -138,9 +203,10 @@ body:
     validations:
       required: true
 
-  # --------------------------------------------------
+
+  # ==================================================
   # CHANGE MANAGEMENT
-  # --------------------------------------------------
+  # ==================================================
 
   - type: input
     id: ritm
@@ -155,7 +221,7 @@ body:
     id: owner
     attributes:
       label: Application / Resource Owner
-      description: Enter the application or resource owner/team.
+      description: Enter the application or team owner.
       placeholder: application-team
     validations:
       required: true
@@ -166,31 +232,34 @@ body:
       label: Business Justification
       description: Explain why the Azure Container Registry is required.
       placeholder: |
-        Provide the business justification for creating this Azure Container Registry.
+        Provide the business justification for this deployment.
     validations:
       required: true
 
-  # --------------------------------------------------
+
+  # ==================================================
   # ADDITIONAL REQUIREMENTS
-  # --------------------------------------------------
+  # ==================================================
 
   - type: textarea
     id: additional-requirements
     attributes:
       label: Additional Requirements
-      description: Mention any additional requirements such as networking, private endpoint, firewall rules, repositories, or access requirements.
+      description: Mention additional requirements such as Private Endpoint, AKS integration, firewall rules, repository access, or security requirements.
       placeholder: |
         Example:
+        - ACR to be integrated with AKS
         - Private Endpoint required
-        - Network restrictions required
-        - Specific repository access required
+        - Public network access disabled
+        - Repository access required
         - Customer-managed key required
     validations:
       required: false
 
-  # --------------------------------------------------
-  # CONFIRMATION
-  # --------------------------------------------------
+
+  # ==================================================
+  # REQUESTER CONFIRMATION
+  # ==================================================
 
   - type: checkboxes
     id: confirmation
