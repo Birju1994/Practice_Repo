@@ -1,25 +1,62 @@
-name: ACR Decommission
-description: Request to decommission an Azure Container Registry
-title: "[ACR - Decommission]"
+name: Azure Container Registry Deployment
+description: Request deployment of an Azure Container Registry
+title: "[ACR - Deployment] "
 labels:
-  - azure-acr-decommission
+  - azure-acr-deployment
 
 body:
-  - type: markdown
-    attributes:
-      value: "## Azure Container Registry Decommission"
 
   - type: markdown
     attributes:
       value: |
-        Please provide the required information for the Azure Container Registry decommission request.
+        ## Azure Container Registry Deployment
+
+        Please provide all required information for the Azure Container Registry deployment request.
+
+  # --------------------------------------------------
+  # PROJECT DETAILS
+  # --------------------------------------------------
+
+  - type: markdown
+    attributes:
+      value: |
+        ### Project Details
 
   - type: input
-    id: acr-name
+    id: subscription
     attributes:
-      label: ACR Name
-      description: Enter the name of the Azure Container Registry to be decommissioned.
-      placeholder: "acr-example-prod"
+      label: Azure Subscription
+      description: Enter the Azure Subscription name or Subscription ID.
+      placeholder: Azure subscription 1
+    validations:
+      required: true
+
+  - type: input
+    id: resource-group
+    attributes:
+      label: Resource Group
+      description: Enter the existing Azure Resource Group where the ACR will be deployed.
+      placeholder: rg-project-dev
+    validations:
+      required: true
+
+  # --------------------------------------------------
+  # INSTANCE DETAILS
+  # --------------------------------------------------
+
+  - type: markdown
+    attributes:
+      value: |
+        ### Instance Details
+
+  - type: input
+    id: registry-name
+    attributes:
+      label: Registry Name
+      description: |
+        Enter a globally unique Azure Container Registry name.
+        Use only lowercase letters and numbers.
+      placeholder: acrprojectdev001
     validations:
       required: true
 
@@ -27,7 +64,7 @@ body:
     id: location
     attributes:
       label: Location
-      description: Select the Azure region where the ACR is located.
+      description: Select the Azure region where the ACR will be deployed.
       options:
         - East US
         - West US
@@ -37,42 +74,134 @@ body:
         - UK South
         - Southeast Asia
         - Australia East
-        - Other
     validations:
       required: true
 
-  - type: input
-    id: ritm
+  - type: dropdown
+    id: domain-label-scope
     attributes:
-      label: RITM
-      description: Enter the RITM number associated with this decommission request.
-      placeholder: "RITM1234567"
-    validations:
-      required: true
-
-  - type: input
-    id: dso
-    attributes:
-      label: DSO
-      description: Enter the DSO details.
-      placeholder: "Enter DSO"
-    validations:
-      required: true
-
-  - type: textarea
-    id: reason
-    attributes:
-      label: Decommission Reason
-      description: Provide the reason for decommissioning the Azure Container Registry.
-      placeholder: "Example: ACR is no longer required because the application has been migrated."
+      label: Domain Name Label Scope
+      description: Select the required domain name label scope configuration.
+      options:
+        - Unsecure
+        - Secure
     validations:
       required: true
 
   - type: checkboxes
+    id: availability-zones
+    attributes:
+      label: Availability Zones
+      description: Enable availability zones where supported by the selected region and SKU.
+      options:
+        - label: Enable availability zones
+          required: false
+
+  - type: dropdown
+    id: pricing-plan
+    attributes:
+      label: Pricing Plan
+      description: Select the ACR pricing tier.
+      options:
+        - Basic
+        - Standard
+        - Premium
+    validations:
+      required: true
+
+  - type: dropdown
+    id: role-assignment-permissions
+    attributes:
+      label: Role Assignment Permissions Mode
+      description: Select the required ACR permissions model.
+      options:
+        - RBAC Registry + ABAC Repository Permissions
+        - RBAC Registry Permissions
+    validations:
+      required: true
+
+  # --------------------------------------------------
+  # ENVIRONMENT
+  # --------------------------------------------------
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      description: Select the deployment environment.
+      options:
+        - Development
+        - Test
+        - QA
+        - Staging
+        - Production
+    validations:
+      required: true
+
+  # --------------------------------------------------
+  # CHANGE MANAGEMENT
+  # --------------------------------------------------
+
+  - type: input
+    id: ritm
+    attributes:
+      label: RITM / Change Request
+      description: Enter the approved RITM or Change Request number.
+      placeholder: RITM123456
+    validations:
+      required: true
+
+  - type: input
+    id: owner
+    attributes:
+      label: Application / Resource Owner
+      description: Enter the application or resource owner/team.
+      placeholder: application-team
+    validations:
+      required: true
+
+  - type: textarea
+    id: business-justification
+    attributes:
+      label: Business Justification
+      description: Explain why the Azure Container Registry is required.
+      placeholder: |
+        Provide the business justification for creating this Azure Container Registry.
+    validations:
+      required: true
+
+  # --------------------------------------------------
+  # ADDITIONAL REQUIREMENTS
+  # --------------------------------------------------
+
+  - type: textarea
+    id: additional-requirements
+    attributes:
+      label: Additional Requirements
+      description: Mention any additional requirements such as networking, private endpoint, firewall rules, repositories, or access requirements.
+      placeholder: |
+        Example:
+        - Private Endpoint required
+        - Network restrictions required
+        - Specific repository access required
+        - Customer-managed key required
+    validations:
+      required: false
+
+  # --------------------------------------------------
+  # CONFIRMATION
+  # --------------------------------------------------
+
+  - type: checkboxes
     id: confirmation
     attributes:
-      label: Confirmation
-      description: Please confirm before submitting the ACR decommission request.
+      label: Requester Confirmation
       options:
-        - label: I confirm that the above Azure Container Registry is approved for decommissioning.
+        - label: I confirm that the information provided above is accurate.
+          required: true
+
+        - label: I confirm that the required RITM / Change Request approval is available.
+          required: true
+
+        - label: I understand that the ACR will be deployed through the approved GitHub Actions workflow.
           required: true
