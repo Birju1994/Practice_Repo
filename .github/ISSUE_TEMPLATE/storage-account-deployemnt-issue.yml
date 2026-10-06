@@ -33,13 +33,13 @@ body:
   - type: dropdown
     id: role_assignment_permissions_mode
     attributes:
-       lable: Role Assignment Permissions Mode
-       description: Select the required permission model for Azure COntainer Registry
-       options:
-         - RBAC Registry Permissions
-         - RBAC Registry + ABAC Reporsitory Permissions
-      default: 0
-  validations:
+      label: Role Assignment Permissions Mode
+      description: Select the required permission model for Azure COntainer Registry
+      options:
+        - RBAC Registry Permissions
+        - RBAC Registry + ABAC Reporsitory Permissions
+     default: 0
+   validations:
      required: true
      
    
