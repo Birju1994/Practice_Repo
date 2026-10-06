@@ -1,276 +1,62 @@
 name: Azure Container Registry Deployment
 description: Request deployment of an Azure Container Registry
-title: "[ACR - Deployment] "
+title: "Azure Container Registry - Deployment"
 labels:
   - azure-acr-deployment
 
 body:
-
-  # ==================================================
-  # PROJECT DETAILS
-  # ==================================================
-
   - type: markdown
     attributes:
       value: |
-        ## Project Details
-
-  - type: dropdown
-    id: subscription
-    attributes:
-      label: Azure Subscription
-      description: Select the Azure subscription for the ACR deployment.
-      options:
-        - Azure subscription 1
-        - Azure subscription 2
-        - Azure subscription 3
-    validations:
-      required: true
-
-  - type: input
-    id: resource-group
-    attributes:
-      label: Resource Group
-      description: Enter the existing Azure Resource Group name.
-      placeholder: rg-project-dev
-    validations:
-      required: true
-
-
-  # ==================================================
-  # INSTANCE DETAILS
-  # ==================================================
-
-  - type: markdown
-    attributes:
-      value: |
-        ## Instance Details
-
-  - type: input
-    id: registry-name
-    attributes:
-      label: Registry Name
-      description: |
-        Enter a globally unique Azure Container Registry name.
-        Use only lowercase letters and numbers.
-      placeholder: acrprojectdev001
-    validations:
-      required: true
-
-  - type: dropdown
-    id: location
-    attributes:
-      label: Location
-      description: Select the Azure region for the ACR.
-      options:
-        - East US
-        - West US
-        - Central US
-        - North Europe
-        - West Europe
-        - UK South
-        - Southeast Asia
-        - Australia East
-    validations:
-      required: true
-
-  - type: dropdown
-    id: domain-label-scope
-    attributes:
-      label: Domain Name Label Scope
-      description: Select the required domain name label scope.
-      options:
-        - Unsecure
-        - Secure
-    validations:
-      required: true
-
-  - type: dropdown
-    id: pricing-plan
-    attributes:
-      label: Pricing Plan
-      description: Select the ACR SKU.
-      options:
-        - Basic
-        - Standard
-        - Premium
-    validations:
-      required: true
-
-  - type: dropdown
-    id: role-assignment-permissions
-    attributes:
-      label: Role Assignment Permissions Mode
-      description: Select the required repository authorization model.
-      options:
-        - RBAC Registry + ABAC Repository Permissions
-        - RBAC Registry Permissions
-    validations:
-      required: true
-
-  - type: checkboxes
-    id: availability-zones
-    attributes:
-      label: Availability Zones
-      description: Enable availability zones if supported by the selected region and configuration.
-      options:
-        - label: Enable Availability Zones
-          required: false
-
-
-  # ==================================================
-  # NETWORK CONNECTIVITY
-  # ==================================================
-
-  - type: markdown
-    attributes:
-      value: |
-        ## Network Connectivity
-
-        Select how the Azure Container Registry should be accessed from
-        applications, AKS, build agents, and other Azure resources.
-
-  - type: dropdown
-    id: network-access
-    attributes:
-      label: Network Access
-      description: |
-        Select the network connectivity model for the ACR.
-
-        Public Access:
-        ACR is accessible through its public endpoint.
-
-        Selected Networks:
-        Restrict public access to approved IP addresses or networks.
-
-        Private Endpoint:
-        Access ACR privately through an Azure Virtual Network.
-      options:
-        - Public Access
-        - Selected Networks
-        - Private Endpoint
-    validations:
-      required: true
-
-  - type: input
-    id: vnet-name
-    attributes:
-      label: Virtual Network Name
-      description: Required when Private Endpoint is selected.
-      placeholder: vnet-project-dev
-    validations:
-      required: false
-
-  - type: input
-    id: subnet-name
-    attributes:
-      label: Subnet Name
-      description: Required when Private Endpoint is selected.
-      placeholder: snet-private-endpoint
-    validations:
-      required: false
-
-  - type: textarea
-    id: allowed-network
-    attributes:
-      label: Allowed IP Addresses / Networks
-      description: |
-        Required when Selected Networks is selected.
-        Enter approved public IP addresses or CIDR ranges.
-      placeholder: |
-        Example:
-        10.10.10.0/24
-        20.30.40.50/32
-    validations:
-      required: false
-
-
-  # ==================================================
-  # ENVIRONMENT
-  # ==================================================
-
-  - type: dropdown
-    id: environment
-    attributes:
-      label: Environment
-      description: Select the deployment environment.
-      options:
-        - Development
-        - Test
-        - QA
-        - Staging
-        - Production
-    validations:
-      required: true
-
-
-  # ==================================================
-  # CHANGE MANAGEMENT
-  # ==================================================
+        ### Azure Container Registry Deployment Request 
+        Fil in the fields below to deploy an Azure Container Registry via automation workflow.
+        Execution starts when this issue gets the lable **azure-acr-deployment**.
 
   - type: input
     id: ritm
     attributes:
-      label: RITM / Change Request
-      description: Enter the approved RITM or Change Request number.
-      placeholder: RITM123456
+      label: RITM 
+      description: " RITM number for audit traceability. Example: RITM1234567"
+      placeholder: RITM1234567
+    validations:
+      required: true
+
+  - type: dropdown
+    id: subscription_id
+    attributes:
+      label: subscription_id
+      description: "Select the azure subscription from the given list."
+      options:
+        - FAAST NON_PROD
+        - FAAST PROD
+        - Data & Analysis PaaS Non-Prod
+        - Data & Analysis PaaS Prod
+      default: 0
+
+  - type: input
+    id: resource_group_name
+    attributes:
+      label: resource_group_name
+      description: "Must already exit in the selected subscription."
+      placeholder: AZ26P1-ACR-R01
     validations:
       required: true
 
   - type: input
-    id: owner
+    id: registry_name
     attributes:
-      label: Application / Resource Owner
-      description: Enter the application or team owner.
-      placeholder: application-team
+      label: registry_name
+      description: |
+        Format: az{yy}{appid}acr{nn}{env}
+        - yy = year (e.g., 26 for 2026)
+        - appid = 2-10 lowercase characters (letters and numbers allowed)
+        - acr = Fixed resource type
+        - {nn} = instance number (e.g., 01,02)
+        - env = environment (dev = development, test = testing, uat = user acceptance testing, prod = production)
+        Example: az26githubacr01dev
+      placeholder: az26githubacr01dev
+      value: az26githubacr01dev
     validations:
       required: true
-
-  - type: textarea
-    id: business-justification
-    attributes:
-      label: Business Justification
-      description: Explain why the Azure Container Registry is required.
-      placeholder: |
-        Provide the business justification for this deployment.
-    validations:
-      required: true
-
-
-  # ==================================================
-  # ADDITIONAL REQUIREMENTS
-  # ==================================================
-
-  - type: textarea
-    id: additional-requirements
-    attributes:
-      label: Additional Requirements
-      description: Mention additional requirements such as Private Endpoint, AKS integration, firewall rules, repository access, or security requirements.
-      placeholder: |
-        Example:
-        - ACR to be integrated with AKS
-        - Private Endpoint required
-        - Public network access disabled
-        - Repository access required
-        - Customer-managed key required
-    validations:
-      required: false
-
-
-  # ==================================================
-  # REQUESTER CONFIRMATION
-  # ==================================================
-
-  - type: checkboxes
-    id: confirmation
-    attributes:
-      label: Requester Confirmation
-      options:
-        - label: I confirm that the information provided above is accurate.
-          required: true
-
-        - label: I confirm that the required RITM / Change Request approval is available.
-          required: true
-
-        - label: I understand that the ACR will be deployed through the approved GitHub Actions workflow.
-          required: true
+      
+      
