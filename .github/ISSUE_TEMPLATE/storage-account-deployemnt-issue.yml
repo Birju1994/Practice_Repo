@@ -19,4 +19,15 @@ body:
       value: RITM1234567
     validations:
       required: true
+  - type: dropdown
+    id: subscription_id
+    attributes:
+       label: subscription_id
+       description: "Select subscription from the given list"
+       options:
+         - FAAST NON-PROD
+         - FAAST PROD
+         - Data & Analytics PaaS Non-Prod
+         - Data & Analytics PaaS Prod
+      
       
