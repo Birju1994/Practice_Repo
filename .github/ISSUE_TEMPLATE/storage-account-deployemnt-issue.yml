@@ -1,0 +1,22 @@
+name: Azure Storage Account Deployment Issue
+description: Request deployment of an Azure Storage Account
+title: "[Storage Account - Deployment]"
+labels: 
+  - create-azure-storage
+
+body:
+  - type: markdown
+    attributes:
+       value: |
+          ### Azure Web App - Deployment 
+          Fill in the fields below to deploy and Azure Web App.
+  - type: input
+    id: RITM
+    attributes:
+      label: RITM
+      description: "RITM number for audit tracebility. Example: RITM1234567"
+      placeholder: "RITM1234567"
+      value: RITM1234567
+    validations:
+      required: true
+      
