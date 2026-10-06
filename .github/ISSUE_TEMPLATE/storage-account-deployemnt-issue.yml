@@ -29,5 +29,5 @@ body:
          - FAAST PROD
          - Data & Analytics PaaS Non-Prod
          - Data & Analytics PaaS Prod
-       default: 1
+       default: none
       
