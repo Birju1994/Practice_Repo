@@ -134,9 +134,8 @@ body:
         Private Endpoint:
         Access ACR privately through an Azure Virtual Network.
       options:
-        - Public Access
-        - Selected Networks
-        - Private Endpoint
+        - Public Access (all networks)
+        - Private Endpoint (Recommended)
     validations:
       required: true
       
