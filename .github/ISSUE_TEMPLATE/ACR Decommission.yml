@@ -88,35 +88,35 @@ body:
         - No Reuse
     validations:
       required: true
- - type: checkboxes
-    id: availability-zones
-    attributes:
-      label: Availability Zones
-      description: Enable availability zones if supported by the selected region and configuration.
-      options:
-        - label: Enable Availability Zones
-          required: false
- - type: dropdown
-    id: pricing-plan
-    attributes:
-      label: Pricing Plan
-      description: Select the ACR SKU.
-      options:
-        - Basic
-        - Standard
-        - Premium
-    validations:
-      required: true
+   - type: checkboxes
+      id: availability-zones
+      attributes:
+        label: Availability Zones
+        description: Enable availability zones if supported by the selected region and configuration.
+        options:
+          - label: Enable Availability Zones
+            required: false
+   - type: dropdown
+      id: pricing-plan
+      attributes:
+        label: Pricing Plan
+        description: Select the ACR SKU.
+        options:
+          - Basic
+          - Standard
+          - Premium
+      validations:
+        required: true
 
-  - type: dropdown
-    id: role-assignment-permissions
-    attributes:
-      label: Role Assignment Permissions Mode
-      description: Select the required repository authorization model.
-      options:
-        - RBAC Registry + ABAC Repository Permissions
-        - RBAC Registry Permissions
-    validations:
-      required: true
+    - type: dropdown
+      id: role-assignment-permissions
+      attributes:
+        label: Role Assignment Permissions Mode
+        description: Select the required repository authorization model.
+        options:
+          - RBAC Registry + ABAC Repository Permissions
+          - RBAC Registry Permissions
+      validations:
+        required: true
       
       
