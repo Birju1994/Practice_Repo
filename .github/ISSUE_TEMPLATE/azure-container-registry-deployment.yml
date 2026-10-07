@@ -1,0 +1,122 @@
+name: Azure Container Registry Deployment
+description: Request deployment of an Azure Container Registry
+title: "Azure Container Registry - Deployment"
+labels:
+  - azure-acr-deployment
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### Azure Container Registry Deployment Request 
+        Fil in the fields below to deploy an Azure Container Registry via automation workflow.
+        Execution starts when this issue gets the lable **azure-acr-deployment**.
+
+  - type: input
+    id: ritm
+    attributes:
+      label: RITM 
+      description: " RITM number for audit traceability. Example: RITM1234567"
+      placeholder: RITM1234567
+    validations:
+      required: true
+
+  - type: dropdown
+    id: subscription_id
+    attributes:
+      label: subscription_id
+      description: "Select the azure subscription from the given list."
+      options:
+        - FAAST NON_PROD
+        - FAAST PROD
+        - Data & Analysis PaaS Non-Prod
+        - Data & Analysis PaaS Prod
+      default: 0
+
+  - type: input
+    id: resource_group_name
+    attributes:
+      label: resource_group_name
+      description: "Must already exit in the selected subscription."
+      placeholder: AZ26P1-ACR-RG01
+    validations:
+      required: true
+
+  - type: input
+    id: registry_name
+    attributes:
+      label: registry_name
+      description: |
+        Format: az{yy}{appid}acr{nn}{env}
+        - yy = year (e.g., 26 for 2026)
+        - appid = 2-10 lowercase characters (letters and numbers allowed)
+        - acr = Fixed resource type
+        - {nn} = instance number (e.g., 01,02)
+        - env = environment (dev = development, test = testing, uat = user acceptance testing, prod = production)
+        Example: az26githubacr01dev
+      placeholder: az26githubacr01dev
+      value: az26githubacr01dev
+    validations:
+      required: true
+  - type: dropdown 
+    id: location
+    attributes:
+      label: Location
+      description: Select the Azure region for the ACR.
+      options:
+        - East US
+        - West US
+        - Central US
+        - North Europe
+        - West Europe
+        - UK South
+        - Southeast Asia
+        - Australia East
+    validations:
+      required: true
+
+  - type: dropdown
+    id: domain-label-scope
+    attributes:
+      label: Domain Name Label Scope
+      description: Select the required domain name label scope.
+      options:
+        - Unsecure
+        - Tenant Reuse
+        - Subscription Reuse
+        - Resource Group Reuse
+        - No Reuse
+    validations:
+      required: true
+  - type: checkboxes
+    id: availability-zones
+    attributes:
+      label: Availability Zones
+      description: Enable availability zones if supported by the selected region and configuration.
+      options:
+          - label: Enable Availability Zones
+            required: false
+  - type: dropdown
+    id: pricing-plan
+    attributes:
+        label: Pricing Plan
+        description: Select the ACR SKU.
+        options:
+          - Basic
+          - Standard
+          - Premium
+    validations:
+      required: true
+
+  - type: dropdown
+    id: role-assignment-permissions
+    attributes:
+        label: Role Assignment Permissions Mode
+        description: Select the required repository authorization model.
+        options:
+          - RBAC Registry + ABAC Repository Permissions
+          - RBAC Registry Permissions
+    validations:
+        required: true
+      
+      
