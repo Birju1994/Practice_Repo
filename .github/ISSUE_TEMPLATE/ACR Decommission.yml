@@ -1,4 +1,4 @@
-name: Azure Container Registry Deployment
+name: Container Registry Deployment
 description: Request deployment of an Azure Container Registry
 title: "Azure Container Registry - Deployment"
 labels:
@@ -43,9 +43,9 @@ body:
       required: true
 
   - type: input
-    id: registry_name
+    id: acr_name
     attributes:
-      label: registry_name
+      label: acr_name
       description: |
         Format: az{yy}{appid}acr{nn}{env}
         - yy = year (e.g., 26 for 2026)
@@ -53,11 +53,12 @@ body:
         - acr = Fixed resource type
         - {nn} = instance number (e.g., 01,02)
         - env = environment (dev = development, test = testing, uat = user acceptance testing, prod = production)
-        Example: az26githubacr01dev
+          Example: az26githubacr01dev
       placeholder: az26githubacr01dev
       value: az26githubacr01dev
     validations:
       required: true
+  
   - type: dropdown 
     id: location
     attributes:
@@ -99,44 +100,23 @@ body:
   - type: dropdown
     id: pricing-plan
     attributes:
-        label: Pricing Plan
-        description: Select the ACR SKU.
-        options:
-          - Basic
-          - Standard
-          - Premium
+      label: Pricing Plan
+      description: Select the ACR SKU.
+      options:
+        - Basic
+        - Standard
+        - Premium
     validations:
       required: true
 
   - type: dropdown
     id: role-assignment-permissions
     attributes:
-        label: Role Assignment Permissions Mode
-        description: Select the required repository authorization model.
-        options:
-          - RBAC Registry + ABAC Repository Permissions
-          - RBAC Registry Permissions
-    validations:
-        required: true
-  - type: dropdown
-    id: network-access
-    attributes:
-      label: Network Access
-      description: |
-        Select the network connectivity model for the ACR.
-
-        Public Access:
-        ACR is accessible through its public endpoint.
-
-        Selected Networks:
-        Restrict public access to approved IP addresses or networks.
-
-        Private Endpoint:
-        Access ACR privately through an Azure Virtual Network.
+      label: Role Assignment Permissions Mode
+      description: Select the required repository authorization model.
       options:
-        - Public Access (all networks)
-        - Private Endpoint (Recommended)
+        - RBAC Registry + ABAC Repository Permissions
+        - RBAC Registry Permissions
     validations:
       required: true
-      
-      
+  
