@@ -1,0 +1,895 @@
+name: Azure Container Registry Deployment
+
+on:
+
+  # ===========================================================
+  # 1. ISSUE FORM / LABEL TRIGGER
+  # ===========================================================
+
+  issues:
+    types: [labeled]
+
+  # ===========================================================
+  # 2. MANUAL TRIGGER
+  # ===========================================================
+
+  workflow_dispatch:
+    inputs:
+
+      ritm:
+        description: "RITM number for audit traceability. Example: RITM1234567"
+        required: true
+        type: string
+
+      subscription_id:
+        description: "Select the Azure subscription."
+        required: true
+        type: choice
+        options:
+          - FAAST NON_PROD
+          - FAAST PROD
+          - Data & Analysis PaaS Non-Prod
+          - Data & Analysis PaaS Prod
+          - Azure subscription 1
+        default: Azure subscription 1
+
+      resource_group_name:
+        description: "Existing Azure Resource Group name."
+        required: true
+        type: string
+
+      acr_name:
+        description: "Format: az{yy}{appid}acr{nn}{env}"
+        required: true
+        type: string
+
+      location:
+        description: "Select the Azure region."
+        required: true
+        type: choice
+        options:
+          - East US
+          - West US
+          - Central US
+          - North Europe
+          - West Europe
+          - UK South
+          - Southeast Asia
+          - Australia East
+
+      domain_label_scope:
+        description: "Select the Domain Name Label Scope."
+        required: true
+        type: choice
+        options:
+          - Unsecure
+          - Tenant Reuse
+          - Subscription Reuse
+          - Resource Group Reuse
+          - No Reuse
+
+      availability_zones:
+        description: "Enable Availability Zones."
+        required: true
+        type: boolean
+        default: false
+
+      pricing_plan:
+        description: "Select the ACR SKU."
+        required: true
+        type: choice
+        options:
+          - Basic
+          - Standard
+          - Premium
+
+      role_assignment_permissions:
+        description: "Select the repository authorization model."
+        required: true
+        type: choice
+        options:
+          - RBAC Registry + ABAC Repository Permissions
+          - RBAC Registry Permissions
+
+
+# =============================================================
+# WORKFLOW PERMISSIONS
+# =============================================================
+
+permissions:
+  contents: read
+  issues: write
+
+
+# =============================================================
+# GLOBAL ENVIRONMENT
+# =============================================================
+
+env:
+  AZURE_ENVIRONMENT: azure-acr-prod
+
+
+# =============================================================
+# JOBS
+# =============================================================
+
+jobs:
+
+  # ===========================================================
+  # JOB 1 - INPUT COLLECTION
+  # ===========================================================
+
+  collect-inputs:
+
+    name: Collect Deployment Inputs
+
+    runs-on: ubuntu-latest
+
+    # ---------------------------------------------------------
+    # Run for:
+    #
+    # 1. workflow_dispatch
+    # 2. Issue labeled with azure-acr-deployment
+    # ---------------------------------------------------------
+
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'issues' &&
+        contains(github.event.issue.labels.*.name, 'azure-acr-deployment')
+      )
+
+    outputs:
+
+      ritm: ${{ steps.inputs.outputs.ritm }}
+      subscription_id: ${{ steps.inputs.outputs.subscription_id }}
+      resource_group_name: ${{ steps.inputs.outputs.resource_group_name }}
+      acr_name: ${{ steps.inputs.outputs.acr_name }}
+      location: ${{ steps.inputs.outputs.location }}
+      domain_label_scope: ${{ steps.inputs.outputs.domain_label_scope }}
+      availability_zones: ${{ steps.inputs.outputs.availability_zones }}
+      pricing_plan: ${{ steps.inputs.outputs.pricing_plan }}
+      role_assignment_permissions: ${{ steps.inputs.outputs.role_assignment_permissions }}
+
+    steps:
+
+      # =======================================================
+      # EXTRACT ISSUE FORM INPUTS
+      # =======================================================
+
+      - name: Extract Issue Form Inputs
+        if: github.event_name == 'issues'
+        id: issue-inputs
+        shell: bash
+
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+
+        run: |
+
+          set -e
+
+          echo "Extracting values from GitHub Issue Form..."
+
+          get_value() {
+
+            local field="$1"
+
+            echo "$ISSUE_BODY" |
+            awk -v field="$field" '
+              $0 == "### " field {
+                getline
+                while ($0 == "") getline
+                print
+                exit
+              }
+            '
+          }
+
+          RITM=$(get_value "RITM")
+          SUBSCRIPTION_ID=$(get_value "subscription_id")
+          RESOURCE_GROUP_NAME=$(get_value "resource_group_name")
+          ACR_NAME=$(get_value "acr_name")
+          LOCATION=$(get_value "Location")
+          DOMAIN_LABEL_SCOPE=$(get_value "Domain Name Label Scope")
+          PRICING_PLAN=$(get_value "Pricing Plan")
+          ROLE_ASSIGNMENT=$(get_value "Role Assignment Permissions Mode")
+
+          # ---------------------------------------------------
+          # Checkbox handling
+          # ---------------------------------------------------
+          #
+          # GitHub Issue Form checkbox normally appears as:
+          #
+          # - [x] Enable Availability Zones
+          #
+          # OR
+          #
+          # - [ ] Enable Availability Zones
+          #
+          # We only consider [x] as enabled.
+          # ---------------------------------------------------
+
+          if echo "$ISSUE_BODY" | grep -qE '^- \[x\] Enable Availability Zones$'; then
+            AVAILABILITY_ZONES="true"
+          else
+            AVAILABILITY_ZONES="false"
+          fi
+
+          echo "ritm=$RITM" >> "$GITHUB_OUTPUT"
+          echo "subscription_id=$SUBSCRIPTION_ID" >> "$GITHUB_OUTPUT"
+          echo "resource_group_name=$RESOURCE_GROUP_NAME" >> "$GITHUB_OUTPUT"
+          echo "acr_name=$ACR_NAME" >> "$GITHUB_OUTPUT"
+          echo "location=$LOCATION" >> "$GITHUB_OUTPUT"
+          echo "domain_label_scope=$DOMAIN_LABEL_SCOPE" >> "$GITHUB_OUTPUT"
+          echo "availability_zones=$AVAILABILITY_ZONES" >> "$GITHUB_OUTPUT"
+          echo "pricing_plan=$PRICING_PLAN" >> "$GITHUB_OUTPUT"
+          echo "role_assignment_permissions=$ROLE_ASSIGNMENT" >> "$GITHUB_OUTPUT"
+
+
+      # =======================================================
+      # NORMALIZE INPUTS
+      # =======================================================
+
+      - name: Normalize Deployment Inputs
+        id: inputs
+        shell: bash
+
+        env:
+
+          EVENT_NAME: ${{ github.event_name }}
+
+          # ---------------------------------------------------
+          # Manual inputs
+          # ---------------------------------------------------
+
+          MANUAL_RITM: ${{ inputs.ritm }}
+          MANUAL_SUBSCRIPTION: ${{ inputs.subscription_id }}
+          MANUAL_RG: ${{ inputs.resource_group_name }}
+          MANUAL_ACR: ${{ inputs.acr_name }}
+          MANUAL_LOCATION: ${{ inputs.location }}
+          MANUAL_DOMAIN: ${{ inputs.domain_label_scope }}
+          MANUAL_ZONES: ${{ inputs.availability_zones }}
+          MANUAL_SKU: ${{ inputs.pricing_plan }}
+          MANUAL_ROLE: ${{ inputs.role_assignment_permissions }}
+
+          # ---------------------------------------------------
+          # Issue Form inputs
+          # ---------------------------------------------------
+
+          ISSUE_RITM: ${{ steps.issue-inputs.outputs.ritm }}
+          ISSUE_SUBSCRIPTION: ${{ steps.issue-inputs.outputs.subscription_id }}
+          ISSUE_RG: ${{ steps.issue-inputs.outputs.resource_group_name }}
+          ISSUE_ACR: ${{ steps.issue-inputs.outputs.acr_name }}
+          ISSUE_LOCATION: ${{ steps.issue-inputs.outputs.location }}
+          ISSUE_DOMAIN: ${{ steps.issue-inputs.outputs.domain_label_scope }}
+          ISSUE_ZONES: ${{ steps.issue-inputs.outputs.availability_zones }}
+          ISSUE_SKU: ${{ steps.issue-inputs.outputs.pricing_plan }}
+          ISSUE_ROLE: ${{ steps.issue-inputs.outputs.role_assignment_permissions }}
+
+        run: |
+
+          set -e
+
+          # =================================================
+          # SELECT INPUT SOURCE
+          # =================================================
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+
+            RITM="$MANUAL_RITM"
+            SUBSCRIPTION="$MANUAL_SUBSCRIPTION"
+            RESOURCE_GROUP="$MANUAL_RG"
+            ACR="$MANUAL_ACR"
+            LOCATION="$MANUAL_LOCATION"
+            DOMAIN="$MANUAL_DOMAIN"
+            ZONES="$MANUAL_ZONES"
+            SKU="$MANUAL_SKU"
+            ROLE="$MANUAL_ROLE"
+
+          else
+
+            RITM="$ISSUE_RITM"
+            SUBSCRIPTION="$ISSUE_SUBSCRIPTION"
+            RESOURCE_GROUP="$ISSUE_RG"
+            ACR="$ISSUE_ACR"
+            LOCATION="$ISSUE_LOCATION"
+            DOMAIN="$ISSUE_DOMAIN"
+            ZONES="$ISSUE_ZONES"
+            SKU="$ISSUE_SKU"
+            ROLE="$ISSUE_ROLE"
+
+          fi
+
+
+          # =================================================
+          # VALIDATE REQUIRED INPUTS
+          # =================================================
+
+          [[ -n "$RITM" ]] || {
+            echo "ERROR: RITM is required."
+            exit 1
+          }
+
+          [[ -n "$SUBSCRIPTION" ]] || {
+            echo "ERROR: Subscription is required."
+            exit 1
+          }
+
+          [[ -n "$RESOURCE_GROUP" ]] || {
+            echo "ERROR: Resource Group is required."
+            exit 1
+          }
+
+          [[ -n "$ACR" ]] || {
+            echo "ERROR: ACR Name is required."
+            exit 1
+          }
+
+          [[ -n "$LOCATION" ]] || {
+            echo "ERROR: Location is required."
+            exit 1
+          }
+
+          [[ -n "$SKU" ]] || {
+            echo "ERROR: Pricing Plan is required."
+            exit 1
+          }
+
+          [[ -n "$ROLE" ]] || {
+            echo "ERROR: Role Assignment Permission is required."
+            exit 1
+          }
+
+
+          # =================================================
+          # VALIDATE SUBSCRIPTION VALUE
+          # =================================================
+
+          case "$SUBSCRIPTION" in
+
+            "FAAST NON_PROD"|
+            "FAAST PROD"|
+            "Data & Analysis PaaS Non-Prod"|
+            "Data & Analysis PaaS Prod"|
+            "Azure subscription 1")
+
+              echo "Subscription selection is valid."
+              ;;
+
+            *)
+
+              echo "ERROR: Invalid Azure subscription selected."
+              exit 1
+              ;;
+
+          esac
+
+
+          # =================================================
+          # OUTPUTS
+          # =================================================
+
+          echo "ritm=$RITM" >> "$GITHUB_OUTPUT"
+          echo "subscription_id=$SUBSCRIPTION" >> "$GITHUB_OUTPUT"
+          echo "resource_group_name=$RESOURCE_GROUP" >> "$GITHUB_OUTPUT"
+          echo "acr_name=$ACR" >> "$GITHUB_OUTPUT"
+          echo "location=$LOCATION" >> "$GITHUB_OUTPUT"
+          echo "domain_label_scope=$DOMAIN" >> "$GITHUB_OUTPUT"
+          echo "availability_zones=$ZONES" >> "$GITHUB_OUTPUT"
+          echo "pricing_plan=$SKU" >> "$GITHUB_OUTPUT"
+          echo "role_assignment_permissions=$ROLE" >> "$GITHUB_OUTPUT"
+
+
+          # =================================================
+          # DISPLAY REQUEST
+          # =================================================
+
+          echo ""
+          echo "=============================================="
+          echo "        AZURE ACR DEPLOYMENT REQUEST"
+          echo "=============================================="
+          echo "RITM             : $RITM"
+          echo "Subscription     : $SUBSCRIPTION"
+          echo "Resource Group   : $RESOURCE_GROUP"
+          echo "ACR Name         : $ACR"
+          echo "Location         : $LOCATION"
+          echo "Domain Scope     : $DOMAIN"
+          echo "Availability     : $ZONES"
+          echo "Pricing Plan     : $SKU"
+          echo "Role Assignment  : $ROLE"
+          echo "=============================================="
+
+
+  # ===========================================================
+  # JOB 2 - AZURE ACR DEPLOYMENT
+  # ===========================================================
+
+  deploy-acr:
+
+    name: Deploy Azure Container Registry
+
+    runs-on: ubuntu-latest
+
+    needs:
+      - collect-inputs
+
+    # ---------------------------------------------------------
+    # GitHub Environment
+    # ---------------------------------------------------------
+
+    environment:
+      name: azure-acr-prod
+
+    # ---------------------------------------------------------
+    # Job-level permissions
+    # ---------------------------------------------------------
+
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+
+      # =======================================================
+      # RESOLVE AZURE SUBSCRIPTION
+      # =======================================================
+
+      - name: Resolve Azure Subscription
+        id: subscription
+        shell: bash
+
+        env:
+          SELECTED_SUBSCRIPTION: ${{ needs.collect-inputs.outputs.subscription_id }}
+
+        run: |
+
+          set -e
+
+          case "$SELECTED_SUBSCRIPTION" in
+
+            "FAAST NON_PROD")
+              echo "subscription_id=${{ secrets.FAAST_NONPROD_SUBSCRIPTION_ID }}" >> "$GITHUB_OUTPUT"
+              ;;
+
+            "FAAST PROD")
+              echo "subscription_id=${{ secrets.FAAST_PROD_SUBSCRIPTION_ID }}" >> "$GITHUB_OUTPUT"
+              ;;
+
+            "Data & Analysis PaaS Non-Prod")
+              echo "subscription_id=${{ secrets.DATA_PAAS_NONPROD_SUBSCRIPTION_ID }}" >> "$GITHUB_OUTPUT"
+              ;;
+
+            "Data & Analysis PaaS Prod")
+              echo "subscription_id=${{ secrets.DATA_PAAS_PROD_SUBSCRIPTION_ID }}" >> "$GITHUB_OUTPUT"
+              ;;
+
+            "Azure subscription 1")
+              echo "subscription_id=${{ secrets.AZURE_SUBSCRIPTION_1_ID }}" >> "$GITHUB_OUTPUT"
+              ;;
+
+            *)
+              echo "ERROR: Unsupported subscription selected."
+              exit 1
+              ;;
+
+          esac
+
+          echo "Azure subscription mapping completed."
+
+
+      # =======================================================
+      # AZURE AUTHENTICATION
+      # =======================================================
+
+      - name: Azure Login
+        uses: azure/login@v2
+
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ steps.subscription.outputs.subscription_id }}
+
+
+      # =======================================================
+      # VERIFY AZURE CONTEXT
+      # =======================================================
+
+      - name: Verify Azure Account
+        shell: bash
+
+        run: |
+
+          set -e
+
+          az account show \
+            --query "{Name:name, SubscriptionId:id, TenantId:tenantId}" \
+            --output table
+
+
+      # =======================================================
+      # VALIDATE RESOURCE GROUP
+      # =======================================================
+
+      - name: Validate Resource Group
+
+        env:
+          RESOURCE_GROUP: ${{ needs.collect-inputs.outputs.resource_group_name }}
+          AZURE_SUBSCRIPTION_ID: ${{ steps.subscription.outputs.subscription_id }}
+
+        shell: bash
+
+        run: |
+
+          set -e
+
+          echo "Checking Resource Group..."
+
+          az group show \
+            --name "$RESOURCE_GROUP" \
+            --subscription "$AZURE_SUBSCRIPTION_ID" \
+            --output table
+
+
+      # =======================================================
+      # VALIDATE ACR NAME
+      # =======================================================
+
+      - name: Validate ACR Naming Convention
+
+        env:
+          ACR_NAME: ${{ needs.collect-inputs.outputs.acr_name }}
+
+        shell: bash
+
+        run: |
+
+          set -e
+
+          if [[ ! "$ACR_NAME" =~ ^az[0-9]{2}[a-z0-9]{2,10}acr[0-9]{2}(dev|test|uat|prod)$ ]]; then
+
+            echo "ERROR: Invalid ACR name."
+
+            echo ""
+            echo "Expected format:"
+            echo "az{yy}{appid}acr{nn}{env}"
+
+            exit 1
+
+          fi
+
+          echo "ACR name validation successful."
+
+
+      # =======================================================
+      # VALIDATE DOMAIN SCOPE
+      # =======================================================
+
+      - name: Validate Domain Name Label Scope
+
+        env:
+          DOMAIN_SCOPE: ${{ needs.collect-inputs.outputs.domain_label_scope }}
+
+        shell: bash
+
+        run: |
+
+          set -e
+
+          case "$DOMAIN_SCOPE" in
+
+            "Unsecure"|
+            "Tenant Reuse"|
+            "Subscription Reuse"|
+            "Resource Group Reuse"|
+            "No Reuse")
+
+              echo "Domain Name Label Scope is valid."
+              ;;
+
+            *)
+
+              echo "ERROR: Invalid Domain Name Label Scope."
+              exit 1
+              ;;
+
+          esac
+
+
+      # =======================================================
+      # VALIDATE ROLE ASSIGNMENT MODE
+      # =======================================================
+
+      - name: Validate Role Assignment Permissions
+
+        env:
+          ROLE: ${{ needs.collect-inputs.outputs.role_assignment_permissions }}
+
+        shell: bash
+
+        run: |
+
+          set -e
+
+          case "$ROLE" in
+
+            "RBAC Registry + ABAC Repository Permissions"|
+            "RBAC Registry Permissions")
+
+              echo "Role assignment configuration is valid."
+              ;;
+
+            *)
+
+              echo "ERROR: Invalid role assignment configuration."
+              exit 1
+              ;;
+
+          esac
+
+
+      # =======================================================
+      # VALIDATE AVAILABILITY ZONES
+      # =======================================================
+
+      - name: Validate Availability Zone Configuration
+
+        env:
+          ZONES: ${{ needs.collect-inputs.outputs.availability_zones }}
+
+        shell: bash
+
+        run: |
+
+          set -e
+
+          if [[ "$ZONES" != "true" && "$ZONES" != "false" ]]; then
+
+            echo "ERROR: Availability Zones must be true or false."
+            exit 1
+
+          fi
+
+          echo "Availability Zone configuration validated."
+
+
+      # =======================================================
+      # DEPLOY AZURE CONTAINER REGISTRY
+      # =======================================================
+
+      - name: Deploy Azure Container Registry
+
+        env:
+
+          RESOURCE_GROUP: ${{ needs.collect-inputs.outputs.resource_group_name }}
+          ACR_NAME: ${{ needs.collect-inputs.outputs.acr_name }}
+          LOCATION: ${{ needs.collect-inputs.outputs.location }}
+          SKU: ${{ needs.collect-inputs.outputs.pricing_plan }}
+          DOMAIN_SCOPE: ${{ needs.collect-inputs.outputs.domain_label_scope }}
+          ZONES: ${{ needs.collect-inputs.outputs.availability_zones }}
+          ROLE: ${{ needs.collect-inputs.outputs.role_assignment_permissions }}
+
+        shell: bash
+
+        run: |
+
+          set -e
+
+          echo "Starting Azure Container Registry deployment..."
+
+          # =================================================
+          # BUILD ACR COMMAND
+          # =================================================
+
+          COMMAND=(
+            az acr create
+            --resource-group "$RESOURCE_GROUP"
+            --name "$ACR_NAME"
+            --location "$LOCATION"
+            --sku "$SKU"
+          )
+
+
+          # =================================================
+          # DOMAIN NAME LABEL SCOPE
+          # =================================================
+
+          case "$DOMAIN_SCOPE" in
+
+            "Unsecure")
+              COMMAND+=(--dnl-scope Unsecure)
+              ;;
+
+            "Tenant Reuse")
+              COMMAND+=(--dnl-scope TenantReuse)
+              ;;
+
+            "Subscription Reuse")
+              COMMAND+=(--dnl-scope SubscriptionReuse)
+              ;;
+
+            "Resource Group Reuse")
+              COMMAND+=(--dnl-scope ResourceGroupReuse)
+              ;;
+
+            "No Reuse")
+              COMMAND+=(--dnl-scope NoReuse)
+              ;;
+
+            *)
+              echo "ERROR: Invalid Domain Name Label Scope."
+              exit 1
+              ;;
+
+          esac
+
+
+          # =================================================
+          # ROLE ASSIGNMENT MODE
+          # =================================================
+
+          case "$ROLE" in
+
+            "RBAC Registry + ABAC Repository Permissions")
+
+              COMMAND+=(--role-assignment-mode rbac-abac)
+              ;;
+
+            "RBAC Registry Permissions")
+
+              COMMAND+=(--role-assignment-mode rbac)
+              ;;
+
+            *)
+
+              echo "ERROR: Invalid Role Assignment Mode."
+              exit 1
+              ;;
+
+          esac
+
+
+          # =================================================
+          # AVAILABILITY ZONE CONFIGURATION
+          # =================================================
+
+          if [[ "$ZONES" == "true" ]]; then
+
+            COMMAND+=(--zone-redundancy Enabled)
+
+          else
+
+            COMMAND+=(--zone-redundancy Disabled)
+
+          fi
+
+
+          # =================================================
+          # EXECUTE DEPLOYMENT
+          # =================================================
+
+          echo "Executing Azure deployment..."
+
+          "${COMMAND[@]}"
+
+          echo ""
+          echo "ACR deployment completed successfully."
+
+
+      # =======================================================
+      # POST DEPLOYMENT VALIDATION
+      # =======================================================
+
+      - name: Validate ACR Deployment
+
+        env:
+
+          RESOURCE_GROUP: ${{ needs.collect-inputs.outputs.resource_group_name }}
+          ACR_NAME: ${{ needs.collect-inputs.outputs.acr_name }}
+
+        shell: bash
+
+        run: |
+
+          set -e
+
+          echo "Validating Azure Container Registry..."
+
+          az acr show \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$ACR_NAME" \
+            --query "{
+              Name:name,
+              Location:location,
+              SKU:sku.name,
+              LoginServer:loginServer,
+              ProvisioningState:provisioningState
+            }" \
+            --output table
+
+          echo ""
+          echo "ACR validation completed successfully."
+
+
+      # =======================================================
+      # SUCCESS LABEL - ISSUE TRIGGER ONLY
+      # =======================================================
+
+      - name: Add Deployment Success Label
+
+        if: github.event_name == 'issues'
+
+        uses: actions/github-script@v7
+
+        with:
+
+          script: |
+
+            await github.rest.issues.addLabels({
+
+              owner: context.repo.owner,
+
+              repo: context.repo.repo,
+
+              issue_number: context.issue.number,
+
+              labels: [
+                'azure-acr-deployment-success'
+              ]
+
+            });
+
+
+      # =======================================================
+      # SUCCESS COMMENT - ISSUE TRIGGER ONLY
+      # =======================================================
+
+      - name: Update Issue With Deployment Result
+
+        if: github.event_name == 'issues'
+
+        uses: actions/github-script@v7
+
+        env:
+
+          RITM: ${{ needs.collect-inputs.outputs.ritm }}
+          SUBSCRIPTION: ${{ needs.collect-inputs.outputs.subscription_id }}
+          ACR: ${{ needs.collect-inputs.outputs.acr_name }}
+          RESOURCE_GROUP: ${{ needs.collect-inputs.outputs.resource_group_name }}
+          LOCATION: ${{ needs.collect-inputs.outputs.location }}
+          SKU: ${{ needs.collect-inputs.outputs.pricing_plan }}
+
+        with:
+
+          script: |
+
+            const body = `
+            ## Azure Container Registry Deployment Successful
+
+            | Parameter | Value |
+            |---|---|
+            | RITM | ${process.env.RITM} |
+            | Subscription | ${process.env.SUBSCRIPTION} |
+            | ACR Name | ${process.env.ACR} |
+            | Resource Group | ${process.env.RESOURCE_GROUP} |
+            | Location | ${process.env.LOCATION} |
+            | Pricing Plan | ${process.env.SKU} |
+            | Workflow Run | ${context.runId} |
+
+            **Status:** Successfully deployed and validated.
+
+            The Azure Container Registry deployment has completed successfully.
+            `;
+
+            await github.rest.issues.createComment({
+
+              owner: context.repo.owner,
+
+              repo: context.repo.repo,
+
+              issue_number: context.issue.number,
+
+              body
+
+            });
