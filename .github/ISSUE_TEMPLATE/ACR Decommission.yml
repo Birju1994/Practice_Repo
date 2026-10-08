@@ -31,6 +31,7 @@ body:
         - FAAST PROD
         - Data & Analysis PaaS Non-Prod
         - Data & Analysis PaaS Prod
+        - Azure subscription 1
       default: 0
 
   - type: input
