@@ -1,4 +1,4 @@
-name: Azure Container Registry Deployment
+name: Container Registry Deployment
 description: Request deployment of an Azure Container Registry
 title: "Azure Container Registry - Deployment"
 labels:
