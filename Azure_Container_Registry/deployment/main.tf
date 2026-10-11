@@ -1,5 +1,5 @@
 module "container_registry" {
-  source = "../modules"
+  source = "../Modules"
 
   rg_name                       = var.rg_name
   rg_location                   = var.rg_location
