@@ -23,39 +23,22 @@ on:
 
       subscription_id:
         description: "Select the Azure subscription."
-        required: true
-        type: choice
-        options:
-          - FAAST NON_PROD
-          - FAAST PROD
-          - Data & Analysis PaaS Non-Prod
-          - Data & Analysis PaaS Prod
-          - Azure subscription 1
-        default: Azure subscription 1
+        required: false
+        default: "Azure subscription 1"
 
       resource_group_name:
         description: "Existing Azure Resource Group name."
-        required: true
-        type: string
+        required: false
+        default: "GITHUB-AZURE-TEST-RG"
 
       acr_name:
         description: "Format: az{yy}{appid}acr{nn}{env}"
-        required: true
-        type: string
+        required: false
 
       location:
         description: "Select the Azure region."
-        required: true
-        type: choice
-        options:
-          - East US
-          - West US
-          - Central US
-          - North Europe
-          - West Europe
-          - UK South
-          - Southeast Asia
-          - Australia East
+        required: false
+        default: "East US"
 
       domain_label_scope:
         description: "Select the Domain Name Label Scope."
@@ -99,6 +82,7 @@ on:
 permissions:
   contents: read
   issues: write
+  id-token: write
 
 
 # =============================================================

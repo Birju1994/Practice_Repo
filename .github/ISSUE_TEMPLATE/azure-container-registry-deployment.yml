@@ -15,7 +15,7 @@ body:
   - type: input
     id: ritm
     attributes:
-      label: RITM 
+      label: ritm
       description: " RITM number for audit traceability. Example: RITM1234567"
       placeholder: RITM1234567
     validations:
@@ -31,6 +31,7 @@ body:
         - FAAST PROD
         - Data & Analysis PaaS Non-Prod
         - Data & Analysis PaaS Prod
+        - Azure Subscription 1
       default: 0
 
   - type: input
@@ -43,9 +44,9 @@ body:
       required: true
 
   - type: input
-    id: registry_name
+    id: acr_name
     attributes:
-      label: registry_name
+      label: acr_name
       description: |
         Format: az{yy}{appid}acr{nn}{env}
         - yy = year (e.g., 26 for 2026)
@@ -58,10 +59,11 @@ body:
       value: az26githubacr01dev
     validations:
       required: true
+  
   - type: dropdown 
     id: location
     attributes:
-      label: Location
+      label: location
       description: Select the Azure region for the ACR.
       options:
         - East US
@@ -78,7 +80,7 @@ body:
   - type: dropdown
     id: domain-label-scope
     attributes:
-      label: Domain Name Label Scope
+      label: domain-label-scope
       description: Select the required domain name label scope.
       options:
         - Unsecure
@@ -88,18 +90,19 @@ body:
         - No Reuse
     validations:
       required: true
+  
   - type: checkboxes
     id: availability-zones
     attributes:
-      label: Availability Zones
+      label: availability-zones
       description: Enable availability zones if supported by the selected region and configuration.
       options:
           - label: Enable Availability Zones
             required: false
   - type: dropdown
-    id: pricing-plan
+    id: sku
     attributes:
-        label: Pricing Plan
+        label: sku
         description: Select the ACR SKU.
         options:
           - Basic
@@ -111,7 +114,7 @@ body:
   - type: dropdown
     id: role-assignment-permissions
     attributes:
-        label: Role Assignment Permissions Mode
+        label: role-assignment-permissions
         description: Select the required repository authorization model.
         options:
           - RBAC Registry + ABAC Repository Permissions
