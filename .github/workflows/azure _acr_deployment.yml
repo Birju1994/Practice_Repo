@@ -168,7 +168,18 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
           echo "Input validation passed for RITM $RITM."
+      - name: Install unzip
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip
+          unzip -v
 
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false
   resolve-subscription:
     name: Resolve Azure subscription
     runs-on: self-hosted
@@ -222,22 +233,6 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ vars.TERRAFORM_VERSION || '1.9.8' }}
-
-      
-      
-      - name: Install unzip
-        shell: bash
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y unzip
-          unzip -v
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.9.8
-          terraform_wrapper: false
-
 
       - name: Terraform init (remote Azure state via OIDC)
         working-directory: ${{ env.TF_WORKING_DIR }}
