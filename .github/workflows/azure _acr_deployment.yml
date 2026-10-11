@@ -1,47 +1,48 @@
 name: Azure Container Registry Deployment
 
 on:
-
-  # ===========================================================
-  # 1. ISSUE FORM / LABEL TRIGGER
-  # ===========================================================
-
-  issues:
-    types: [labeled]
-
-  # ===========================================================
-  # 2. MANUAL TRIGGER
-  # ===========================================================
-
   workflow_dispatch:
     inputs:
-
       ritm:
-        description: "RITM number for audit traceability. Example: RITM1234567"
+        description: "RITM number for audit traceability"
         required: true
         type: string
-
       subscription_id:
-        description: "Select the Azure subscription."
-        required: false
-        default: "Azure subscription 1"
-
+        description: "Azure subscription alias configured in repository secrets"
+        required: true
+        type: choice
+        options:
+          - Azure subscription 1
+          - FAAST NON_PROD
+          - FAAST PROD
+          - Data & Analysis PaaS Non-Prod
+          - Data & Analysis PaaS Prod
       resource_group_name:
-        description: "Existing Azure Resource Group name."
-        required: false
-        default: "GITHUB-AZURE-TEST-RG"
-
+        description: "Existing Azure Resource Group name"
+        required: true
+        type: string
+        default: GITHUB-AZURE-TEST-RG
       acr_name:
-        description: "Format: az{yy}{appid}acr{nn}{env}"
-        required: false
-
+        description: "Globally unique ACR name (lowercase letters/numbers only)"
+        required: true
+        type: string
       location:
-        description: "Select the Azure region."
-        required: false
-        default: "East US"
-
+        description: "Azure region"
+        required: true
+        type: string
+        default: eastus
+      sku:
+        description: "ACR SKU"
+        required: true
+        type: choice
+        options: [Basic, Standard, Premium]
+      availability_zones:
+        description: "Enable zone redundancy (Premium SKU only where supported)"
+        required: true
+        type: boolean
+        default: false
       domain_label_scope:
-        description: "Select the Domain Name Label Scope."
+        description: "ACR login-server domain label scope"
         required: true
         type: choice
         options:
@@ -50,830 +51,337 @@ on:
           - Subscription Reuse
           - Resource Group Reuse
           - No Reuse
-
-      availability_zones:
-        description: "Enable Availability Zones."
-        required: true
-        type: boolean
-        default: false
-
-      pricing_plan:
-        description: "Select the ACR SKU."
-        required: true
-        type: choice
-        options:
-          - Basic
-          - Standard
-          - Premium
-
       role_assignment_permissions:
-        description: "Select the repository authorization model."
+        description: "Repository authorization model"
         required: true
         type: choice
         options:
           - RBAC Registry + ABAC Repository Permissions
           - RBAC Registry Permissions
 
-
-# =============================================================
-# WORKFLOW PERMISSIONS
-# =============================================================
+  issues:
+    types: [labeled]
 
 permissions:
   contents: read
   issues: write
   id-token: write
 
-
-# =============================================================
-# GLOBAL ENVIRONMENT
-# =============================================================
+concurrency:
+  group: acr-deployment-${{ github.event.issue.number || github.ref }}
+  cancel-in-progress: false
 
 env:
-  AZURE_ENVIRONMENT: azure-acr-prod
-
-
-# =============================================================
-# JOBS
-# =============================================================
+  AZURE_ENVIRONMENT: ${{ vars.AZURE_WORK_ENVIRONMENT || 'azure-acr-prod' }}
+  TF_IN_AUTOMATION: true
+  TF_INPUT: false
+  TF_WORKING_DIR: ${{ vars.TERRAFORM_WORKING_DIRECTORY || 'Azure_Container_Registry/deployment' }}
 
 jobs:
-
-  # ===========================================================
-  # JOB 1 - INPUT COLLECTION
-  # ===========================================================
-
   collect-inputs:
-
-    name: Collect Deployment Inputs
-
-    runs-on: ubuntu-24.04
-
-    # ---------------------------------------------------------
-    # Run for:
-    #
-    # 1. workflow_dispatch
-    # 2. Issue labeled with azure-acr-deployment
-    # ---------------------------------------------------------
-
-    if: |
+    name: Collect and validate deployment inputs
+    runs-on: self-hosted
+    if: >-
       github.event_name == 'workflow_dispatch' ||
-      (
-        github.event_name == 'issues' &&
-        contains(github.event.issue.labels.*.name, 'azure-acr-deployment')
-      )
-
+      (github.event_name == 'issues' &&
+      contains(github.event.issue.labels.*.name, 'azure-acr-deployment'))
     outputs:
-
       ritm: ${{ steps.inputs.outputs.ritm }}
-      subscription_id: ${{ steps.inputs.outputs.subscription_id }}
+      subscription_name: ${{ steps.inputs.outputs.subscription_name }}
       resource_group_name: ${{ steps.inputs.outputs.resource_group_name }}
       acr_name: ${{ steps.inputs.outputs.acr_name }}
       location: ${{ steps.inputs.outputs.location }}
-      domain_label_scope: ${{ steps.inputs.outputs.domain_label_scope }}
+      sku: ${{ steps.inputs.outputs.sku }}
       availability_zones: ${{ steps.inputs.outputs.availability_zones }}
-      pricing_plan: ${{ steps.inputs.outputs.pricing_plan }}
+      domain_label_scope: ${{ steps.inputs.outputs.domain_label_scope }}
       role_assignment_permissions: ${{ steps.inputs.outputs.role_assignment_permissions }}
-
     steps:
-
-      # =======================================================
-      # EXTRACT ISSUE FORM INPUTS
-      # =======================================================
-
-      - name: Extract Issue Form Inputs
-        if: github.event_name == 'issues'
-        id: issue-inputs
-        shell: bash
-
-        env:
-          ISSUE_BODY: ${{ github.event.issue.body }}
-
-        run: |
-
-          set -e
-
-          echo "Extracting values from GitHub Issue Form..."
-
-          get_value() {
-
-            local field="$1"
-
-            echo "$ISSUE_BODY" |
-            awk -v field="$field" '
-              $0 == "### " field {
-                getline
-                while ($0 == "") getline
-                print
-                exit
-              }
-            '
-          }
-
-          RITM=$(get_value "RITM")
-          SUBSCRIPTION_ID=$(get_value "subscription_id")
-          RESOURCE_GROUP_NAME=$(get_value "resource_group_name")
-          ACR_NAME=$(get_value "acr_name")
-          LOCATION=$(get_value "Location")
-          DOMAIN_LABEL_SCOPE=$(get_value "Domain Name Label Scope")
-          PRICING_PLAN=$(get_value "Pricing Plan")
-          ROLE_ASSIGNMENT=$(get_value "Role Assignment Permissions Mode")
-
-          # ---------------------------------------------------
-          # Checkbox handling
-          # ---------------------------------------------------
-          #
-          # GitHub Issue Form checkbox normally appears as:
-          #
-          # - [x] Enable Availability Zones
-          #
-          # OR
-          #
-          # - [ ] Enable Availability Zones
-          #
-          # We only consider [x] as enabled.
-          # ---------------------------------------------------
-
-          if echo "$ISSUE_BODY" | grep -qE '^- \[x\] Enable Availability Zones$'; then
-            AVAILABILITY_ZONES="true"
-          else
-            AVAILABILITY_ZONES="false"
-          fi
-
-          echo "ritm=$RITM" >> "$GITHUB_OUTPUT"
-          echo "subscription_id=$SUBSCRIPTION_ID" >> "$GITHUB_OUTPUT"
-          echo "resource_group_name=$RESOURCE_GROUP_NAME" >> "$GITHUB_OUTPUT"
-          echo "acr_name=$ACR_NAME" >> "$GITHUB_OUTPUT"
-          echo "location=$LOCATION" >> "$GITHUB_OUTPUT"
-          echo "domain_label_scope=$DOMAIN_LABEL_SCOPE" >> "$GITHUB_OUTPUT"
-          echo "availability_zones=$AVAILABILITY_ZONES" >> "$GITHUB_OUTPUT"
-          echo "pricing_plan=$PRICING_PLAN" >> "$GITHUB_OUTPUT"
-          echo "role_assignment_permissions=$ROLE_ASSIGNMENT" >> "$GITHUB_OUTPUT"
-
-
-      # =======================================================
-      # NORMALIZE INPUTS
-      # =======================================================
-
-      - name: Normalize Deployment Inputs
+      - name: Read and validate inputs
         id: inputs
         shell: bash
-
         env:
-
           EVENT_NAME: ${{ github.event_name }}
-
-          # ---------------------------------------------------
-          # Manual inputs
-          # ---------------------------------------------------
-
+          ISSUE_BODY: ${{ github.event.issue.body }}
           MANUAL_RITM: ${{ inputs.ritm }}
           MANUAL_SUBSCRIPTION: ${{ inputs.subscription_id }}
           MANUAL_RG: ${{ inputs.resource_group_name }}
           MANUAL_ACR: ${{ inputs.acr_name }}
           MANUAL_LOCATION: ${{ inputs.location }}
-          MANUAL_DOMAIN: ${{ inputs.domain_label_scope }}
+          MANUAL_SKU: ${{ inputs.sku }}
           MANUAL_ZONES: ${{ inputs.availability_zones }}
-          MANUAL_SKU: ${{ inputs.pricing_plan }}
+          MANUAL_DOMAIN: ${{ inputs.domain_label_scope }}
           MANUAL_ROLE: ${{ inputs.role_assignment_permissions }}
-
-          # ---------------------------------------------------
-          # Issue Form inputs
-          # ---------------------------------------------------
-
-          ISSUE_RITM: ${{ steps.issue-inputs.outputs.ritm }}
-          ISSUE_SUBSCRIPTION: ${{ steps.issue-inputs.outputs.subscription_id }}
-          ISSUE_RG: ${{ steps.issue-inputs.outputs.resource_group_name }}
-          ISSUE_ACR: ${{ steps.issue-inputs.outputs.acr_name }}
-          ISSUE_LOCATION: ${{ steps.issue-inputs.outputs.location }}
-          ISSUE_DOMAIN: ${{ steps.issue-inputs.outputs.domain_label_scope }}
-          ISSUE_ZONES: ${{ steps.issue-inputs.outputs.availability_zones }}
-          ISSUE_SKU: ${{ steps.issue-inputs.outputs.pricing_plan }}
-          ISSUE_ROLE: ${{ steps.issue-inputs.outputs.role_assignment_permissions }}
-
         run: |
+          set -euo pipefail
 
-          set -e
-
-          # =================================================
-          # SELECT INPUT SOURCE
-          # =================================================
+          get_value() {
+            local field="$1"
+            printf '%s\n' "$ISSUE_BODY" | awk -v field="$field" '
+              $0 == "### " field { found=1; getline; while ($0 == "") getline; print; exit }
+            '
+          }
 
           if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-
             RITM="$MANUAL_RITM"
             SUBSCRIPTION="$MANUAL_SUBSCRIPTION"
-            RESOURCE_GROUP="$MANUAL_RG"
+            RG="$MANUAL_RG"
             ACR="$MANUAL_ACR"
             LOCATION="$MANUAL_LOCATION"
-            DOMAIN="$MANUAL_DOMAIN"
-            ZONES="$MANUAL_ZONES"
             SKU="$MANUAL_SKU"
+            ZONES="$MANUAL_ZONES"
+            DOMAIN="$MANUAL_DOMAIN"
             ROLE="$MANUAL_ROLE"
-
           else
-
-            RITM="$ISSUE_RITM"
-            SUBSCRIPTION="$ISSUE_SUBSCRIPTION"
-            RESOURCE_GROUP="$ISSUE_RG"
-            ACR="$ISSUE_ACR"
-            LOCATION="$ISSUE_LOCATION"
-            DOMAIN="$ISSUE_DOMAIN"
-            ZONES="$ISSUE_ZONES"
-            SKU="$ISSUE_SKU"
-            ROLE="$ISSUE_ROLE"
-
+            RITM="$(get_value 'RITM')"
+            SUBSCRIPTION="$(get_value 'Subscription')"
+            RG="$(get_value 'Resource Group Name')"
+            ACR="$(get_value 'ACR Name')"
+            LOCATION="$(get_value 'Location')"
+            SKU="$(get_value 'Pricing Plan')"
+            DOMAIN="$(get_value 'Domain Name Label Scope')"
+            ROLE="$(get_value 'Role Assignment Permissions Mode')"
+            if printf '%s' "$ISSUE_BODY" | grep -qiE '^- \[x\] Enable Availability Zones$'; then ZONES=true; else ZONES=false; fi
           fi
 
-
-          # =================================================
-          # VALIDATE REQUIRED INPUTS
-          # =================================================
-
-          [[ -n "$RITM" ]] || {
-            echo "ERROR: RITM is required."
+          for pair in "RITM:$RITM" "Subscription:$SUBSCRIPTION" "Resource Group:$RG" "ACR Name:$ACR" "Location:$LOCATION" "SKU:$SKU" "Role:$ROLE"; do
+            if [[ -z "${pair#*:}" ]]; then echo "ERROR: $pair is required." >&2; exit 1; fi
+          done
+          [[ "$SKU" == "Basic" || "$SKU" == "Standard" || "$SKU" == "Premium" ]] || { echo "ERROR: Invalid SKU." >&2; exit 1; }
+          [[ "$ZONES" == "true" || "$ZONES" == "false" ]] || { echo "ERROR: Availability Zones must be true/false." >&2; exit 1; }
+          # Azure Container Registry names are 5-50 lowercase alphanumeric characters.
+          [[ "$ACR" =~ ^[a-z0-9]{5,50}$ ]] || { echo "ERROR: ACR name must be 5-50 lowercase letters/numbers." >&2; exit 1; }
+          if [[ "$ZONES" == "true" && "$SKU" != "Premium" ]]; then
+            echo "ERROR: Zone redundancy requires Premium SKU. Choose Premium or disable zones." >&2
             exit 1
-          }
+          fi
 
-          [[ -n "$SUBSCRIPTION" ]] || {
-            echo "ERROR: Subscription is required."
-            exit 1
-          }
+          {
+            echo "ritm=$RITM"
+            echo "subscription_name=$SUBSCRIPTION"
+            echo "resource_group_name=$RG"
+            echo "acr_name=$ACR"
+            echo "location=$LOCATION"
+            echo "sku=$SKU"
+            echo "availability_zones=$ZONES"
+            echo "domain_label_scope=$DOMAIN"
+            echo "role_assignment_permissions=$ROLE"
+          } >> "$GITHUB_OUTPUT"
 
-          [[ -n "$RESOURCE_GROUP" ]] || {
-            echo "ERROR: Resource Group is required."
-            exit 1
-          }
+          echo "Input validation passed for RITM $RITM."
 
-          [[ -n "$ACR" ]] || {
-            echo "ERROR: ACR Name is required."
-            exit 1
-          }
-
-          [[ -n "$LOCATION" ]] || {
-            echo "ERROR: Location is required."
-            exit 1
-          }
-
-          [[ -n "$SKU" ]] || {
-            echo "ERROR: Pricing Plan is required."
-            exit 1
-          }
-
-          [[ -n "$ROLE" ]] || {
-            echo "ERROR: Role Assignment Permission is required."
-            exit 1
-          }
-
-
-          # =================================================
-          # VALIDATE SUBSCRIPTION VALUE
-          # =================================================
-
-          case "$SUBSCRIPTION" in
-
-            "FAAST NON_PROD"|
-            "FAAST PROD"|
-            "Data & Analysis PaaS Non-Prod"|
-            "Data & Analysis PaaS Prod"|
-            "Azure subscription 1")
-
-              echo "Subscription selection is valid."
-              ;;
-
-            *)
-
-              echo "ERROR: Invalid Azure subscription selected."
-              exit 1
-              ;;
-
+  resolve-subscription:
+    name: Resolve Azure subscription
+    runs-on: self-hosted
+    needs: collect-inputs
+    outputs:
+      subscription_id: ${{ steps.map.outputs.subscription_id }}
+    steps:
+      - name: Map subscription alias to ID
+        id: map
+        shell: bash
+        env:
+          SELECTED_SUBSCRIPTION: ${{ needs.collect-inputs.outputs.subscription_name }}
+          SUB_AZURE_1: ${{ secrets.AZURE_SUBSCRIPTION_1_ID }}
+          SUB_FAAST_NONPROD: ${{ secrets.FAAST_NONPROD_SUBSCRIPTION_ID }}
+          SUB_FAAST_PROD: ${{ secrets.FAAST_PROD_SUBSCRIPTION_ID }}
+          SUB_DATA_NONPROD: ${{ secrets.DATA_PAAS_NONPROD_SUBSCRIPTION_ID }}
+          SUB_DATA_PROD: ${{ secrets.DATA_PAAS_PROD_SUBSCRIPTION_ID }}
+        run: |
+          set -euo pipefail
+          case "$SELECTED_SUBSCRIPTION" in
+            "Azure subscription 1") SUBSCRIPTION_ID="$SUB_AZURE_1" ;;
+            "FAAST NON_PROD") SUBSCRIPTION_ID="$SUB_FAAST_NONPROD" ;;
+            "FAAST PROD") SUBSCRIPTION_ID="$SUB_FAAST_PROD" ;;
+            "Data & Analysis PaaS Non-Prod") SUBSCRIPTION_ID="$SUB_DATA_NONPROD" ;;
+            "Data & Analysis PaaS Prod") SUBSCRIPTION_ID="$SUB_DATA_PROD" ;;
+            *) echo "ERROR: Unsupported subscription alias." >&2; exit 1 ;;
           esac
+          [[ -n "$SUBSCRIPTION_ID" ]] || { echo "ERROR: Secret for selected subscription is empty or missing." >&2; exit 1; }
+          echo "subscription_id=$SUBSCRIPTION_ID" >> "$GITHUB_OUTPUT"
 
-
-          # =================================================
-          # OUTPUTS
-          # =================================================
-
-          echo "ritm=$RITM" >> "$GITHUB_OUTPUT"
-          echo "subscription_id=$SUBSCRIPTION" >> "$GITHUB_OUTPUT"
-          echo "resource_group_name=$RESOURCE_GROUP" >> "$GITHUB_OUTPUT"
-          echo "acr_name=$ACR" >> "$GITHUB_OUTPUT"
-          echo "location=$LOCATION" >> "$GITHUB_OUTPUT"
-          echo "domain_label_scope=$DOMAIN" >> "$GITHUB_OUTPUT"
-          echo "availability_zones=$ZONES" >> "$GITHUB_OUTPUT"
-          echo "pricing_plan=$SKU" >> "$GITHUB_OUTPUT"
-          echo "role_assignment_permissions=$ROLE" >> "$GITHUB_OUTPUT"
-
-
-          # =================================================
-          # DISPLAY REQUEST
-          # =================================================
-
-          echo ""
-          echo "=============================================="
-          echo "        AZURE ACR DEPLOYMENT REQUEST"
-          echo "=============================================="
-          echo "RITM             : $RITM"
-          echo "Subscription     : $SUBSCRIPTION"
-          echo "Resource Group   : $RESOURCE_GROUP"
-          echo "ACR Name         : $ACR"
-          echo "Location         : $LOCATION"
-          echo "Domain Scope     : $DOMAIN"
-          echo "Availability     : $ZONES"
-          echo "Pricing Plan     : $SKU"
-          echo "Role Assignment  : $ROLE"
-          echo "=============================================="
-
-
-  # ===========================================================
-  # JOB 2 - AZURE ACR DEPLOYMENT
-  # ===========================================================
-
-  deploy-acr:
-
-    name: Deploy Azure Container Registry
-
-    runs-on: ubuntu-latest
-
-    needs:
-      - collect-inputs
-
-    # ---------------------------------------------------------
-    # GitHub Environment
-    # ---------------------------------------------------------
-
+  terraform-init:
+    name: Terraform init and validate
+    runs-on: self-hosted
+    needs: [collect-inputs, resolve-subscription]
     environment:
-      name: azure-acr-prod
-
-    # ---------------------------------------------------------
-    # Job-level permissions
-    # ---------------------------------------------------------
-
+      name: ${{ vars.AZURE_WORK_ENVIRONMENT || 'azure-acr-prod' }}
     permissions:
       contents: read
-      issues: write
-
+      id-token: write
+    env:
+      ARM_USE_OIDC: true
+      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ needs.resolve-subscription.outputs.subscription_id }}
+      TFSTATE_RESOURCE_GROUP: ${{ vars.TFSTATE_RESOURCE_GROUP }}
+      TFSTATE_STORAGE_ACCOUNT: ${{ vars.TFSTATE_STORAGE_ACCOUNT }}
+      TFSTATE_CONTAINER: ${{ vars.TFSTATE_CONTAINER }}
+      TFSTATE_KEY: ${{ vars.TFSTATE_KEY || 'acr-prod.tfstate' }}
     steps:
-
-      # =======================================================
-      # RESOLVE AZURE SUBSCRIPTION
-      # =======================================================
-
-      - name: Resolve Azure Subscription
-        id: subscription
-        shell: bash
-
-        env:
-          SELECTED_SUBSCRIPTION: ${{ needs.collect-inputs.outputs.subscription_id }}
-
-        run: |
-
-          set -e
-
-          case "$SELECTED_SUBSCRIPTION" in
-
-            "FAAST NON_PROD")
-              echo "subscription_id=${{ secrets.FAAST_NONPROD_SUBSCRIPTION_ID }}" >> "$GITHUB_OUTPUT"
-              ;;
-
-            "FAAST PROD")
-              echo "subscription_id=${{ secrets.FAAST_PROD_SUBSCRIPTION_ID }}" >> "$GITHUB_OUTPUT"
-              ;;
-
-            "Data & Analysis PaaS Non-Prod")
-              echo "subscription_id=${{ secrets.DATA_PAAS_NONPROD_SUBSCRIPTION_ID }}" >> "$GITHUB_OUTPUT"
-              ;;
-
-            "Data & Analysis PaaS Prod")
-              echo "subscription_id=${{ secrets.DATA_PAAS_PROD_SUBSCRIPTION_ID }}" >> "$GITHUB_OUTPUT"
-              ;;
-
-            "Azure subscription 1")
-              echo "subscription_id=${{ secrets.AZURE_SUBSCRIPTION_1_ID }}" >> "$GITHUB_OUTPUT"
-              ;;
-
-            *)
-              echo "ERROR: Unsupported subscription selected."
-              exit 1
-              ;;
-
-          esac
-
-          echo "Azure subscription mapping completed."
-
-
-      # =======================================================
-      # AZURE AUTHENTICATION
-      # =======================================================
-
-      - name: Azure Login
-        uses: azure/login@v2
-
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ steps.subscription.outputs.subscription_id }}
-
-
-      # =======================================================
-      # VERIFY AZURE CONTEXT
-      # =======================================================
-
-      - name: Verify Azure Account
-        shell: bash
-
+          terraform_version: ${{ vars.TERRAFORM_VERSION || '1.9.8' }}
+      - name: Terraform init (remote Azure state via OIDC)
+        working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
-
-          set -e
-
-          az account show \
-            --query "{Name:name, SubscriptionId:id, TenantId:tenantId}" \
-            --output table
-
-
-      # =======================================================
-      # VALIDATE RESOURCE GROUP
-      # =======================================================
-
-      - name: Validate Resource Group
-
-        env:
-          RESOURCE_GROUP: ${{ needs.collect-inputs.outputs.resource_group_name }}
-          AZURE_SUBSCRIPTION_ID: ${{ steps.subscription.outputs.subscription_id }}
-
-        shell: bash
-
-        run: |
-
-          set -e
-
-          echo "Checking Resource Group..."
-
-          az group show \
-            --name "$RESOURCE_GROUP" \
-            --subscription "$AZURE_SUBSCRIPTION_ID" \
-            --output table
-
-
-      # =======================================================
-      # VALIDATE ACR NAME
-      # =======================================================
-
-      - name: Validate ACR Naming Convention
-
-        env:
-          ACR_NAME: ${{ needs.collect-inputs.outputs.acr_name }}
-
-        shell: bash
-
-        run: |
-
-          set -e
-
-          if [[ ! "$ACR_NAME" =~ ^az[0-9]{2}[a-z0-9]{2,10}acr[0-9]{2}(dev|test|uat|prod)$ ]]; then
-
-            echo "ERROR: Invalid ACR name."
-
-            echo ""
-            echo "Expected format:"
-            echo "az{yy}{appid}acr{nn}{env}"
-
-            exit 1
-
-          fi
-
-          echo "ACR name validation successful."
-
-
-      # =======================================================
-      # VALIDATE DOMAIN SCOPE
-      # =======================================================
-
-      - name: Validate Domain Name Label Scope
-
-        env:
-          DOMAIN_SCOPE: ${{ needs.collect-inputs.outputs.domain_label_scope }}
-
-        shell: bash
-
-        run: |
-
-          set -e
-
-          case "$DOMAIN_SCOPE" in
-
-            "Unsecure"|
-            "Tenant Reuse"|
-            "Subscription Reuse"|
-            "Resource Group Reuse"|
-            "No Reuse")
-
-              echo "Domain Name Label Scope is valid."
-              ;;
-
-            *)
-
-              echo "ERROR: Invalid Domain Name Label Scope."
-              exit 1
-              ;;
-
-          esac
-
-
-      # =======================================================
-      # VALIDATE ROLE ASSIGNMENT MODE
-      # =======================================================
-
-      - name: Validate Role Assignment Permissions
-
-        env:
-          ROLE: ${{ needs.collect-inputs.outputs.role_assignment_permissions }}
-
-        shell: bash
-
-        run: |
-
-          set -e
-
-          case "$ROLE" in
-
-            "RBAC Registry + ABAC Repository Permissions"|
-            "RBAC Registry Permissions")
-
-              echo "Role assignment configuration is valid."
-              ;;
-
-            *)
-
-              echo "ERROR: Invalid role assignment configuration."
-              exit 1
-              ;;
-
-          esac
-
-
-      # =======================================================
-      # VALIDATE AVAILABILITY ZONES
-      # =======================================================
-
-      - name: Validate Availability Zone Configuration
-
-        env:
-          ZONES: ${{ needs.collect-inputs.outputs.availability_zones }}
-
-        shell: bash
-
-        run: |
-
-          set -e
-
-          if [[ "$ZONES" != "true" && "$ZONES" != "false" ]]; then
-
-            echo "ERROR: Availability Zones must be true or false."
-            exit 1
-
-          fi
-
-          echo "Availability Zone configuration validated."
-
-
-      # =======================================================
-      # DEPLOY AZURE CONTAINER REGISTRY
-      # =======================================================
-
-      - name: Deploy Azure Container Registry
-
-        env:
-
-          RESOURCE_GROUP: ${{ needs.collect-inputs.outputs.resource_group_name }}
-          ACR_NAME: ${{ needs.collect-inputs.outputs.acr_name }}
-          LOCATION: ${{ needs.collect-inputs.outputs.location }}
-          SKU: ${{ needs.collect-inputs.outputs.pricing_plan }}
-          DOMAIN_SCOPE: ${{ needs.collect-inputs.outputs.domain_label_scope }}
-          ZONES: ${{ needs.collect-inputs.outputs.availability_zones }}
-          ROLE: ${{ needs.collect-inputs.outputs.role_assignment_permissions }}
-
-        shell: bash
-
-        run: |
-
-          set -e
-
-          echo "Starting Azure Container Registry deployment..."
-
-          # =================================================
-          # BUILD ACR COMMAND
-          # =================================================
-
-          COMMAND=(
-            az acr create
-            --resource-group "$RESOURCE_GROUP"
-            --name "$ACR_NAME"
-            --location "$LOCATION"
-            --sku "$SKU"
-          )
-
-
-          # =================================================
-          # DOMAIN NAME LABEL SCOPE
-          # =================================================
-
-          case "$DOMAIN_SCOPE" in
-
-            "Unsecure")
-              COMMAND+=(--dnl-scope Unsecure)
-              ;;
-
-            "Tenant Reuse")
-              COMMAND+=(--dnl-scope TenantReuse)
-              ;;
-
-            "Subscription Reuse")
-              COMMAND+=(--dnl-scope SubscriptionReuse)
-              ;;
-
-            "Resource Group Reuse")
-              COMMAND+=(--dnl-scope ResourceGroupReuse)
-              ;;
-
-            "No Reuse")
-              COMMAND+=(--dnl-scope NoReuse)
-              ;;
-
-            *)
-              echo "ERROR: Invalid Domain Name Label Scope."
-              exit 1
-              ;;
-
-          esac
-
-
-          # =================================================
-          # ROLE ASSIGNMENT MODE
-          # =================================================
-
-          case "$ROLE" in
-
-            "RBAC Registry + ABAC Repository Permissions")
-
-              COMMAND+=(--role-assignment-mode rbac-abac)
-              ;;
-
-            "RBAC Registry Permissions")
-
-              COMMAND+=(--role-assignment-mode rbac)
-              ;;
-
-            *)
-
-              echo "ERROR: Invalid Role Assignment Mode."
-              exit 1
-              ;;
-
-          esac
-
-
-          # =================================================
-          # AVAILABILITY ZONE CONFIGURATION
-          # =================================================
-
-          if [[ "$ZONES" == "true" ]]; then
-
-            COMMAND+=(--zone-redundancy Enabled)
-
-          else
-
-            COMMAND+=(--zone-redundancy Disabled)
-
-          fi
-
-
-          # =================================================
-          # EXECUTE DEPLOYMENT
-          # =================================================
-
-          echo "Executing Azure deployment..."
-
-          "${COMMAND[@]}"
-
-          echo ""
-          echo "ACR deployment completed successfully."
-
-
-      # =======================================================
-      # POST DEPLOYMENT VALIDATION
-      # =======================================================
-
-      - name: Validate ACR Deployment
-
-        env:
-
-          RESOURCE_GROUP: ${{ needs.collect-inputs.outputs.resource_group_name }}
-          ACR_NAME: ${{ needs.collect-inputs.outputs.acr_name }}
-
-        shell: bash
-
-        run: |
-
-          set -e
-
-          echo "Validating Azure Container Registry..."
-
-          az acr show \
-            --resource-group "$RESOURCE_GROUP" \
-            --name "$ACR_NAME" \
-            --query "{
-              Name:name,
-              Location:location,
-              SKU:sku.name,
-              LoginServer:loginServer,
-              ProvisioningState:provisioningState
-            }" \
-            --output table
-
-          echo ""
-          echo "ACR validation completed successfully."
-
-
-      # =======================================================
-      # SUCCESS LABEL - ISSUE TRIGGER ONLY
-      # =======================================================
-
-      - name: Add Deployment Success Label
-
-        if: github.event_name == 'issues'
-
-        uses: actions/github-script@v7
-
+          set -euo pipefail
+          : "${ARM_CLIENT_ID:?Set repository/environment secret AZURE_CLIENT_ID}"
+          : "${ARM_TENANT_ID:?Set repository/environment secret AZURE_TENANT_ID}"
+          : "${ARM_SUBSCRIPTION_ID:?Selected subscription ID secret is missing}"
+          : "${TFSTATE_RESOURCE_GROUP:?Set variable TFSTATE_RESOURCE_GROUP}"
+          : "${TFSTATE_STORAGE_ACCOUNT:?Set variable TFSTATE_STORAGE_ACCOUNT}"
+          : "${TFSTATE_CONTAINER:?Set variable TFSTATE_CONTAINER}"
+          terraform init -input=false -reconfigure \
+            -backend-config="resource_group_name=$TFSTATE_RESOURCE_GROUP" \
+            -backend-config="storage_account_name=$TFSTATE_STORAGE_ACCOUNT" \
+            -backend-config="container_name=$TFSTATE_CONTAINER" \
+            -backend-config="key=$TFSTATE_KEY" \
+            -backend-config="use_oidc=true" \
+            -backend-config="use_azuread_auth=true" \
+            -backend-config="tenant_id=$ARM_TENANT_ID" \
+            -backend-config="client_id=$ARM_CLIENT_ID" \
+            -backend-config="subscription_id=$ARM_SUBSCRIPTION_ID"
+          terraform fmt -check -recursive
+          terraform validate
+
+  terraform-plan:
+    name: Terraform plan
+    runs-on: self-hosted
+    needs: [collect-inputs, resolve-subscription, terraform-init]
+    environment:
+      name: ${{ vars.AZURE_WORK_ENVIRONMENT || 'azure-acr-prod' }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ARM_USE_OIDC: true
+      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ needs.resolve-subscription.outputs.subscription_id }}
+      TFSTATE_RESOURCE_GROUP: ${{ vars.TFSTATE_RESOURCE_GROUP }}
+      TFSTATE_STORAGE_ACCOUNT: ${{ vars.TFSTATE_STORAGE_ACCOUNT }}
+      TFSTATE_CONTAINER: ${{ vars.TFSTATE_CONTAINER }}
+      TFSTATE_KEY: ${{ vars.TFSTATE_KEY || 'acr-prod.tfstate' }}
+      TF_VAR_rg_name: ${{ needs.collect-inputs.outputs.resource_group_name }}
+      TF_VAR_rg_location: ${{ needs.collect-inputs.outputs.location }}
+      TF_VAR_acr_name: ${{ needs.collect-inputs.outputs.acr_name }}
+      TF_VAR_sku_name: ${{ needs.collect-inputs.outputs.sku }}
+      TF_VAR_zone_redundancy_enabled: ${{ needs.collect-inputs.outputs.availability_zones }}
+      TF_VAR_tags: '{"managed_by":"github-actions","environment":"prod"}'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
         with:
-
-          script: |
-
-            await github.rest.issues.addLabels({
-
-              owner: context.repo.owner,
-
-              repo: context.repo.repo,
-
-              issue_number: context.issue.number,
-
-              labels: [
-                'azure-acr-deployment-success'
-              ]
-
-            });
-
-
-      # =======================================================
-      # SUCCESS COMMENT - ISSUE TRIGGER ONLY
-      # =======================================================
-
-      - name: Update Issue With Deployment Result
-
-        if: github.event_name == 'issues'
-
-        uses: actions/github-script@v7
-
+          terraform_version: ${{ vars.TERRAFORM_VERSION || '1.9.8' }}
+      - name: Terraform init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          set -euo pipefail
+          terraform init -input=false -reconfigure \
+            -backend-config="resource_group_name=$TFSTATE_RESOURCE_GROUP" \
+            -backend-config="storage_account_name=$TFSTATE_STORAGE_ACCOUNT" \
+            -backend-config="container_name=$TFSTATE_CONTAINER" \
+            -backend-config="key=$TFSTATE_KEY" \
+            -backend-config="use_oidc=true" \
+            -backend-config="use_azuread_auth=true" \
+            -backend-config="tenant_id=$ARM_TENANT_ID" \
+            -backend-config="client_id=$ARM_CLIENT_ID" \
+            -backend-config="subscription_id=$ARM_SUBSCRIPTION_ID"
+      - name: Create Terraform plan
+        working-directory: ${{ env.TF_WORKING_DIR }}
         env:
+          REQUEST_RITM: ${{ needs.collect-inputs.outputs.ritm }}
+          REQUEST_DOMAIN_SCOPE: ${{ needs.collect-inputs.outputs.domain_label_scope }}
+          REQUEST_ROLE_MODE: ${{ needs.collect-inputs.outputs.role_assignment_permissions }}
+        run: |
+          set -euo pipefail
+          # These two values are recorded as tags for traceability. The Terraform
+          # root module must declare the variables listed in TF_VAR_* above.
+          echo "Planning ACR deployment for RITM: $REQUEST_RITM"
+          terraform plan -input=false -lock-timeout=5m -out=tfplan
+      - uses: actions/upload-artifact@v4
+        with:
+          name: acr-terraform-plan
+          path: ${{ env.TF_WORKING_DIR }}/tfplan
+          if-no-files-found: error
+          retention-days: 1
 
+  terraform-apply:
+    name: Terraform apply (protected)
+    runs-on: self-hosted
+    needs: [collect-inputs, resolve-subscription, terraform-plan]
+    # Configure required reviewers on this GitHub Environment to require approval.
+    environment:
+      name: ${{ vars.AZURE_APPLY_ENVIRONMENT || 'azure-acr-prod-apply' }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ARM_USE_OIDC: true
+      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ needs.resolve-subscription.outputs.subscription_id }}
+      TFSTATE_RESOURCE_GROUP: ${{ vars.TFSTATE_RESOURCE_GROUP }}
+      TFSTATE_STORAGE_ACCOUNT: ${{ vars.TFSTATE_STORAGE_ACCOUNT }}
+      TFSTATE_CONTAINER: ${{ vars.TFSTATE_CONTAINER }}
+      TFSTATE_KEY: ${{ vars.TFSTATE_KEY || 'acr-prod.tfstate' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ vars.TERRAFORM_VERSION || '1.9.8' }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: acr-terraform-plan
+          path: ${{ env.TF_WORKING_DIR }}
+      - name: Terraform init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          set -euo pipefail
+          terraform init -input=false -reconfigure \
+            -backend-config="resource_group_name=$TFSTATE_RESOURCE_GROUP" \
+            -backend-config="storage_account_name=$TFSTATE_STORAGE_ACCOUNT" \
+            -backend-config="container_name=$TFSTATE_CONTAINER" \
+            -backend-config="key=$TFSTATE_KEY" \
+            -backend-config="use_oidc=true" \
+            -backend-config="use_azuread_auth=true" \
+            -backend-config="tenant_id=$ARM_TENANT_ID" \
+            -backend-config="client_id=$ARM_CLIENT_ID" \
+            -backend-config="subscription_id=$ARM_SUBSCRIPTION_ID"
+      - name: Apply reviewed Terraform plan
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform apply -input=false -lock-timeout=5m tfplan
+
+  issue-result:
+    name: Update issue with deployment result
+    runs-on: self-hosted
+    if: always() && github.event_name == 'issues' && needs.collect-inputs.result == 'success'
+    needs: [collect-inputs, terraform-apply]
+    permissions:
+      issues: write
+      contents: read
+    steps:
+      - uses: actions/github-script@v7
+        env:
+          APPLY_RESULT: ${{ needs.terraform-apply.result }}
           RITM: ${{ needs.collect-inputs.outputs.ritm }}
-          SUBSCRIPTION: ${{ needs.collect-inputs.outputs.subscription_id }}
           ACR: ${{ needs.collect-inputs.outputs.acr_name }}
-          RESOURCE_GROUP: ${{ needs.collect-inputs.outputs.resource_group_name }}
-          LOCATION: ${{ needs.collect-inputs.outputs.location }}
-          SKU: ${{ needs.collect-inputs.outputs.pricing_plan }}
-
+          RG: ${{ needs.collect-inputs.outputs.resource_group_name }}
         with:
-
           script: |
+            const succeeded = process.env.APPLY_RESULT === 'success';
+            const body = `## Azure Container Registry deployment ${succeeded ? 'succeeded' : 'failed'}
 
-            const body = `
-            ## Azure Container Registry Deployment Successful
-
-            | Parameter | Value |
-            |---|---|
-            | RITM | ${process.env.RITM} |
-            | Subscription | ${process.env.SUBSCRIPTION} |
-            | ACR Name | ${process.env.ACR} |
-            | Resource Group | ${process.env.RESOURCE_GROUP} |
-            | Location | ${process.env.LOCATION} |
-            | Pricing Plan | ${process.env.SKU} |
-            | Workflow Run | ${context.runId} |
-
-            **Status:** Successfully deployed and validated.
-
-            The Azure Container Registry deployment has completed successfully.
+            - **RITM:** ${process.env.RITM}
+            - **ACR:** ${process.env.ACR}
+            - **Resource Group:** ${process.env.RG}
+            - **Workflow run:** ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}
+            - **Status:** ${process.env.APPLY_RESULT}
             `;
-
             await github.rest.issues.createComment({
-
               owner: context.repo.owner,
-
               repo: context.repo.repo,
-
               issue_number: context.issue.number,
-
               body
-
             });

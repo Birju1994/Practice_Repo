@@ -78,9 +78,9 @@ body:
       required: true
 
   - type: dropdown
-    id: domain-label-scope
+    id: domain_label_scope
     attributes:
-      label: domain-label-scope
+      label: domain_label_scope
       description: Select the required domain name label scope.
       options:
         - Unsecure
@@ -92,9 +92,9 @@ body:
       required: true
   
   - type: checkboxes
-    id: availability-zones
+    id: availability_zones
     attributes:
-      label: availability-zones
+      label: availability_zones
       description: Enable availability zones if supported by the selected region and configuration.
       options:
           - label: Enable Availability Zones
@@ -112,9 +112,9 @@ body:
       required: true
 
   - type: dropdown
-    id: role-assignment-permissions
+    id: role_assignment_permissions
     attributes:
-        label: role-assignment-permissions
+        label: role_assignment_permissions
         description: Select the required repository authorization model.
         options:
           - RBAC Registry + ABAC Repository Permissions
