@@ -1,11 +1,8 @@
-resource "azurerm_resource_group" "rg" {
-  name     = var.rg_name
-  location = var.rg_location
-}
+
 resource "azurerm_container_registry" "acr" {
   name                          = var.acr_name
-  resource_group_name           = azurerm_resource_group.rg.name
-  location                      = azurerm_resource_group.rg.location
+  resource_group_name           = var.resource_group_name
+  location                      = var.location
   sku                           = var.sku_name
   admin_enabled                 = var.admin_enabled
   public_network_access_enabled = var.public_network_access_enabled
@@ -14,7 +11,8 @@ resource "azurerm_container_registry" "acr" {
   tags                          = var.tags
 
   dynamic "georeplications" {
-    for_each = var.sku_name == "Premium" ? var.georeplications_config : {}
+    for_each = (var.sku_name == "Premium" && var.georeplications_config != null) ? var.georeplications_config : {}
+
 
     content {
       location = georeplications.value.location
@@ -27,7 +25,7 @@ resource "azurerm_container_registry" "acr" {
     }
   }
   dynamic "network_rule_set" {
-    for_each = var.sku_name == "Premium" ? [var.network_rule_set] : []
+    for_each = var.sku_name == "Premium" && var.network_rule_set != null ? [var.network_rule_set] : []
 
     content {
       default_action = lookup(network_rule_set.value, "default_action", "Deny")
