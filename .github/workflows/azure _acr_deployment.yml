@@ -292,13 +292,19 @@ jobs:
 
           echo "Input validation passed for $RITM."
 
-  # ---------------------------------------------------------
+    # ---------------------------------------------------------
   # JOB 2: Resolve selected subscription alias to subscription ID
   # ---------------------------------------------------------
   resolve-subscription:
     name: Resolve Azure subscription
     runs-on: self-hosted
+
     needs: collect-inputs
+
+    # Important: environment secrets are available only when
+    # this job references the environment where they are configured.
+    environment:
+      name: ${{ vars.AZURE_WORK_ENVIRONMENT || 'azure-acr-nonprod' }}
 
     outputs:
       subscription_id: ${{ steps.map.outputs.subscription_id }}
@@ -307,15 +313,14 @@ jobs:
       - name: Map subscription alias to Azure subscription ID
         id: map
         shell: bash
-
         env:
           SELECTED_SUBSCRIPTION: ${{ needs.collect-inputs.outputs.subscription_name }}
 
           SUB_AZURE_1: ${{ secrets.AZURE_SUBSCRIPTION_1_ID }}
           SUB_FAAST_NONPROD: ${{ secrets.FAAST_NONPROD_SUBSCRIPTION_ID }}
           SUB_FAAST_PROD: ${{ secrets.FAAST_PROD_SUBSCRIPTION_ID }}
-          SUB_DATA_NONPROD: ${{ secrets.DATA_PAAS_NONPROD_SUBSCRIPTION_ID }}
-          SUB_DATA_PROD: ${{ secrets.DATA_PAAS_PROD_SUBSCRIPTION_ID }}
+          SUB_DA_NONPROD: ${{ secrets.DATA_ANALYSIS_PAAS_NONPROD_SUBSCRIPTION_ID }}
+          SUB_DA_PROD: ${{ secrets.DATA_ANALYSIS_PAAS_PROD_SUBSCRIPTION_ID }}
 
         run: |
           set -euo pipefail
@@ -331,28 +336,29 @@ jobs:
               SUBSCRIPTION_ID="$SUB_FAAST_PROD"
               ;;
             "Data & Analysis PaaS Non-Prod")
-              SUBSCRIPTION_ID="$SUB_DATA_NONPROD"
+              SUBSCRIPTION_ID="$SUB_DA_NONPROD"
               ;;
             "Data & Analysis PaaS Prod")
-              SUBSCRIPTION_ID="$SUB_DATA_PROD"
+              SUBSCRIPTION_ID="$SUB_DA_PROD"
               ;;
             *)
-              echo "ERROR: Unsupported subscription alias." >&2
+              echo "::error::Unsupported subscription alias: $SELECTED_SUBSCRIPTION"
               exit 1
               ;;
           esac
 
-          [[ -n "$SUBSCRIPTION_ID" ]] || {
-            echo "ERROR: Selected subscription ID secret is empty." >&2
+          if [[ -z "${SUBSCRIPTION_ID//[[:space:]]/}" ]]; then
+            echo "::error::Subscription ID secret is empty for the selected alias: $SELECTED_SUBSCRIPTION"
             exit 1
-          }
+          fi
 
-          [[ "$SUBSCRIPTION_ID" =~ ^[0-9a-fA-F-]{36}$ ]] || {
-            echo "ERROR: Selected subscription ID is not a valid GUID." >&2
+          if [[ ! "$SUBSCRIPTION_ID" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
+            echo "::error::The configured subscription ID is not a valid GUID."
             exit 1
-          }
+          fi
 
           echo "subscription_id=$SUBSCRIPTION_ID" >> "$GITHUB_OUTPUT"
+          echo "Successfully resolved the selected Azure subscription."
 
   # ---------------------------------------------------------
   # JOB 3: Terraform init and validate
