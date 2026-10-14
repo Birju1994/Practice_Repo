@@ -313,10 +313,7 @@ jobs:
           SELECTED_SUBSCRIPTION: ${{ needs.collect-inputs.outputs.subscription_name }}
 
           SUB_AZURE_1: ${{ secrets.AZURE_SUBSCRIPTION_1_ID }}
-          SUB_FAAST_NONPROD: ${{ secrets.FAAST_NONPROD_SUBSCRIPTION_ID }}
-          SUB_FAAST_PROD: ${{ secrets.FAAST_PROD_SUBSCRIPTION_ID }}
-          SUB_DATA_NONPROD: ${{ secrets.DATA_PAAS_NONPROD_SUBSCRIPTION_ID }}
-          SUB_DATA_PROD: ${{ secrets.DATA_PAAS_PROD_SUBSCRIPTION_ID }}
+          
 
         run: |
           set -euo pipefail
@@ -325,19 +322,7 @@ jobs:
             "Azure Subscription 1")
               SUBSCRIPTION_ID="$SUB_AZURE_1"
               ;;
-            "FAAST NON_PROD")
-              SUBSCRIPTION_ID="$SUB_FAAST_NONPROD"
-              ;;
-            "FAAST PROD")
-              SUBSCRIPTION_ID="$SUB_FAAST_PROD"
-              ;;
-            "Data & Analysis PaaS Non-Prod")
-              SUBSCRIPTION_ID="$SUB_DATA_NONPROD"
-              ;;
-            "Data & Analysis PaaS Prod")
-              SUBSCRIPTION_ID="$SUB_DATA_PROD"
-              ;;
-            *)
+            
               echo "ERROR: Unsupported subscription alias." >&2
               exit 1
               ;;
