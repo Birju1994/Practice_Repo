@@ -1,8 +1,4 @@
 
-output "resource_group_name" {
-  description = "Created Resource Group name"
-  value       = azurerm_resource_group.rg.name
-}
 
 output "acr_name" {
   description = "Created Azure Container Registry name"
