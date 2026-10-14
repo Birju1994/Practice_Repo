@@ -7,6 +7,7 @@ on:
         description: "RITM number for audit traceability"
         required: true
         type: string
+        default: RITM1234567
       subscription_id:
         description: "Azure subscription alias configured in repository secrets"
         required: true
