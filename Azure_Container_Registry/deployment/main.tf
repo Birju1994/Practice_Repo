@@ -1,8 +1,7 @@
 module "container_registry" {
-  source = "../Modules"
-
-  rg_name                       = var.rg_name
-  rg_location                   = var.rg_location
+  source = "../Modules/azurerm_acr"
+  resource_group_name           = data.azurerm_resource_group.rg.name
+  location                      = data.azurerm_resource_group.rg.location
   acr_name                      = var.acr_name
   sku_name                      = var.sku_name
   admin_enabled                 = var.admin_enabled
@@ -14,6 +13,5 @@ module "container_registry" {
   georeplications_config        = var.georeplications_config
 
   network_rule_set = var.network_rule_set
-
-
 }
+

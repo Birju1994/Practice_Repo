@@ -1,13 +1,7 @@
-variable "rg_name" {
+variable "resource_group_name" {
   description = "Name of the Azure Resource Group"
   type        = string
 }
-
-variable "rg_location" {
-  description = "Azure region for the Resource Group and ACR"
-  type        = string
-}
-
 variable "acr_name" {
   description = "Globally unique Azure Container Registry name"
   type        = string
@@ -39,7 +33,7 @@ variable "retention_policy_in_days" {
 }
 
 variable "zone_redundancy_enabled" {
-  type   = bool
+  type = bool
 }
 
 variable "tags" {
@@ -49,17 +43,20 @@ variable "tags" {
 
 variable "identity_type" {
   description = "Managed identity type for ACR"
-  type          = string
+  type        = string
 }
 variable "georeplications_config" {
-  description = "Configuration for ACR geo-replication"
+  description = "Optional ACR geo-replication configuration"
 
   type = map(object({
     location                        = string
-    global_endpoint_routing_enabled = bool
-    zone_redundancy_enabled         = bool
-    tags                            = map(string)
+    global_endpoint_routing_enabled = optional(bool, true)
+    zone_redundancy_enabled         = optional(bool, false)
+    tags                            = optional(map(string), {})
   }))
+
+  default  = null
+  nullable = true
 }
 
 
@@ -67,13 +64,15 @@ variable "network_rule_set" {
   description = "ACR network access configuration"
 
   type = object({
-    default_action = string
+    default_action = optional(string, "Deny")
 
     ip_rules = list(object({
-      action   = string
+      action   = optional(string, "Deny")
       ip_range = string
     }))
   })
+  default  = null
+  nullable = true
 
-  }
+}
 
