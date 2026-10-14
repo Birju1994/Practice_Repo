@@ -9,7 +9,6 @@ on:
         required: true
         type: string
         default: RITM1234567
-
       subscription_id:
         description: "Select the Azure subscription"
         required: true
