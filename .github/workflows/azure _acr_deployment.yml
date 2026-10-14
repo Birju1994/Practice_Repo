@@ -382,6 +382,9 @@ jobs:
       ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
       ARM_SUBSCRIPTION_ID: ${{ needs.resolve-subscription.outputs.subscription_id }}
 
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+
       TFSTATE_RESOURCE_GROUP: ${{ vars.TFSTATE_RESOURCE_GROUP }}
       TFSTATE_STORAGE_ACCOUNT: ${{ vars.TFSTATE_STORAGE_ACCOUNT }}
       TFSTATE_CONTAINER: ${{ vars.TFSTATE_CONTAINER }}
@@ -457,27 +460,13 @@ jobs:
       ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
       ARM_SUBSCRIPTION_ID: ${{ needs.resolve-subscription.outputs.subscription_id }}
 
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+
       TFSTATE_RESOURCE_GROUP: ${{ vars.TFSTATE_RESOURCE_GROUP }}
       TFSTATE_STORAGE_ACCOUNT: ${{ vars.TFSTATE_STORAGE_ACCOUNT }}
       TFSTATE_CONTAINER: ${{ vars.TFSTATE_CONTAINER }}
       TFSTATE_KEY: ${{ vars.TFSTATE_KEY || 'acr-nonprod.tfstate' }}
-
-      # These variable names must match deployment/variable.tf.
-      TF_VAR_resource_group_name: ${{ needs.collect-inputs.outputs.resource_group_name }}
-      TF_VAR_location: ${{ needs.collect-inputs.outputs.location }}
-      TF_VAR_acr_name: ${{ needs.collect-inputs.outputs.acr_name }}
-      TF_VAR_sku_name: ${{ needs.collect-inputs.outputs.sku }}
-      TF_VAR_zone_redundancy_enabled: ${{ needs.collect-inputs.outputs.availability_zones }}
-
-      TF_VAR_admin_enabled: "false"
-      TF_VAR_public_network_access_enabled: "true"
-      TF_VAR_identity_type: "SystemAssigned"
-      TF_VAR_tags: '{"managed_by":"github-actions","environment":"nonprod"}'
-
-      # Declare and wire these variables in the Terraform root module
-      # and child module before using these two settings.
-      TF_VAR_domain_label_scope: ${{ needs.collect-inputs.outputs.domain_label_scope }}
-      TF_VAR_role_assignment_permissions: ${{ needs.collect-inputs.outputs.role_assignment_permissions }}
 
     steps:
       - name: Checkout repository
@@ -551,11 +540,13 @@ jobs:
       ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
       ARM_SUBSCRIPTION_ID: ${{ needs.resolve-subscription.outputs.subscription_id }}
 
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+
       TFSTATE_RESOURCE_GROUP: ${{ vars.TFSTATE_RESOURCE_GROUP }}
       TFSTATE_STORAGE_ACCOUNT: ${{ vars.TFSTATE_STORAGE_ACCOUNT }}
       TFSTATE_CONTAINER: ${{ vars.TFSTATE_CONTAINER }}
       TFSTATE_KEY: ${{ vars.TFSTATE_KEY || 'acr-nonprod.tfstate' }}
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
