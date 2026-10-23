@@ -1,0 +1,115 @@
+name: Azure Container Registry Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      ritm:
+        description: "RITM number for audit traceability"
+        required: true
+        type: string
+        default: RITM1234567
+      subscription_id:
+        description: "Azure subscription alias (only Azure subscription 1 is configured currently)"
+        required: true
+        type: choice
+        options:
+          - Azure subscription 1
+          - FAAST NON_PROD
+          - FAAST PROD
+          - Data & Analysis PaaS Non-Prod
+          - Data & Analysis PaaS Prod
+      resource_group_name:
+        description: "Existing Azure Resource Group name"
+        required: true
+        type: string
+        default: GITHUB-AZURE-TEST-RG
+      acr_name:
+        description: "Globally unique ACR name: 5-50 lowercase letters/numbers"
+        required: true
+        type: string
+        default: az2601githubbrij01dev
+      location:
+        description: "Azure region"
+        required: true
+        type: choice
+        options:
+          - East US
+          - West US
+          - Central US
+          - North Europe
+          - West Europe
+          - UK South
+          - Southeast Asia
+          - Australia East
+      domain_label_scope:
+        description: "ACR domain label scope"
+        required: true
+        type: choice
+        options:
+          - Unsecure
+          - Tenant Reuse
+          - Subscription Reuse
+          - Resource Group Reuse
+          - No Reuse
+      availability_zones:
+        description: "Enable zone redundancy (Premium only and where supported)"
+        required: true
+        type: boolean
+        default: false
+      pricing_plan:
+        description: "ACR SKU"
+        required: true
+        type: choice
+        options:
+          - Basic
+          - Standard
+          - Premium
+      role_assignment_permissions:
+        description: "Repository authorization model"
+        required: true
+        type: choice
+        options:
+          - RBAC Registry + ABAC Repository Permissions
+          - RBAC Registry Permissions
+
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: read
+  issues: write
+  id-token: write
+
+concurrency:
+  group: acr-deployment-${{ github.event.issue.number || github.run_id }}
+  cancel-in-progress: false
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  TF_WORKING_DIR: ${{ vars.TERRAFORM_WORKING_DIRECTORY || 'Azure_Container_Registry/deployment' }}
+jobs:
+  terraform-init-plan:
+    runs-on: self-hosted
+    steps: 
+      - name: Checkout
+        uses: actions/checkout@v5.1.0
+
+      - name: Azure Login
+        uses: Azure/login@v3.0.2
+        with:
+          client-id: b0cae2b2-5d19-4375-be88-cb48b7eeb1e7
+          # TenantId of the Azure Service principal created.
+          tenant-id: 690445ab-ca1d-4e35-a15f-0b685e668c85
+          # Azure subscriptionId
+          subscription-id: 8fecf497-861e-40f9-922a-09f095a29168
+      - name: Terraform fmt
+        id: fmt
+        run: terraform fmt -check
+        continue-on-error: true
+        working-directory: Azure_Container_Registry/deployment
+      
+      
+    
+      
+        
+      
