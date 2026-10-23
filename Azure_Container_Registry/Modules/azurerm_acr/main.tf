@@ -1,49 +1,49 @@
-
 resource "azurerm_container_registry" "acr" {
-  name                          = var.acr_name
-  resource_group_name           = var.resource_group_name
-  location                      = var.location
+  name                = var.acr_name
+  resource_group_name = var.resource_group_name
+  location            = data.azurerm_resource_group.rg.location
+
   sku                           = var.sku_name
   admin_enabled                 = var.admin_enabled
   public_network_access_enabled = var.public_network_access_enabled
-  retention_policy_in_days      = var.sku_name == "Premium" ? var.retention_policy_in_days : null
-  zone_redundancy_enabled       = var.sku_name == "Premium" ? var.zone_redundancy_enabled : null
   tags                          = var.tags
 
-  dynamic "georeplications" {
-    for_each = (var.sku_name == "Premium" && var.georeplications_config != null) ? var.georeplications_config : {}
+  zone_redundancy_enabled = local.effective_zone_redundancy
+  retention_policy_in_days = local.effective_retention_days
 
+  identity {
+    type = var.identity_type
+  }
+
+  # Geo-replication: Premium only
+  dynamic "georeplications" {
+    for_each = local.effective_georeplications
 
     content {
-      location = georeplications.value.location
-
-      global_endpoint_routing_enabled = lookup(georeplications.value, "global_endpoint_routing_enabled", true)
-
-      zone_redundancy_enabled = lookup(georeplications.value, "zone_redundancy_enabled", false)
-
-      tags = lookup(georeplications.value, "tags", {})  
+      location                        = georeplications.value.location
+      global_endpoint_routing_enabled = georeplications.value.global_endpoint_routing_enabled
+      zone_redundancy_enabled         = georeplications.value.zone_redundancy_enabled
+      tags                            = georeplications.value.tags
     }
   }
+
+  # Network rules: Premium only
   dynamic "network_rule_set" {
-    for_each = var.sku_name == "Premium" && var.network_rule_set != null ? [var.network_rule_set] : []
+    for_each = local.effective_network_rules == null ? [] : [
+      local.effective_network_rules
+    ]
 
     content {
-      default_action = lookup(network_rule_set.value, "default_action", "Deny")
+      default_action = network_rule_set.value.default_action
 
       dynamic "ip_rule" {
         for_each = network_rule_set.value.ip_rules
 
         content {
-          action   = lookup(ip_rule.value, "action", "Allow")
+          action   = ip_rule.value.action
           ip_range = ip_rule.value.ip_range
         }
       }
     }
   }
-
-
-  identity {
-    type = var.identity_type
-  }
 }
-

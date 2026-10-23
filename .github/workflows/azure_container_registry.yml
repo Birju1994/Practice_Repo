@@ -1,0 +1,520 @@
+name: Azure Container Registry Deployment
+
+on:
+  issues:
+    types: [labeled]
+
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "Existing GitHub Issue number containing the ACR request"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+  id-token: write
+
+concurrency:
+  group: acr-deployment-${{ github.event.issue.number || inputs.issue_number || github.run_id }}
+  cancel-in-progress: false
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  TF_WORKING_DIR: Azure_Container_Registry/deployment
+
+jobs:
+  validate-and-plan:
+    name: Validate Issue and Create Terraform Plan
+    runs-on: [self-hosted]
+
+    if: >-
+      ${{
+        (github.event_name == 'issues' &&
+         github.event.action == 'labeled' &&
+         github.event.label.name == 'azure-acr-deployment') ||
+        github.event_name == 'workflow_dispatch'
+      }}
+
+    environment: azure-acr-nonprod
+
+    outputs:
+      subscription_id: ${{ steps.request.outputs.subscription_id }}
+      resource_group_name: ${{ steps.request.outputs.resource_group_name }}
+      acr_name: ${{ steps.request.outputs.acr_name }}
+      ritm: ${{ steps.request.outputs.ritm }}
+      public_network_access: ${{ steps.request.outputs.public_network_access }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Read Issue Form
+        id: request
+        uses: actions/github-script@v7
+        env:
+          ISSUE_NUMBER_INPUT: ${{ inputs.issue_number }}
+        with:
+          script: |
+            const issueNumber = context.eventName === "workflow_dispatch"
+              ? Number(process.env.ISSUE_NUMBER_INPUT)
+              : context.issue.number;
+
+            if (!Number.isInteger(issueNumber) || issueNumber < 1) {
+              core.setFailed("A valid GitHub issue number is required.");
+              return;
+            }
+
+            const { data: issue } = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber
+            });
+
+            if (context.eventName === "workflow_dispatch") {
+              const hasLabel = issue.labels.some(
+                label => typeof label === "object"
+                  ? label.name === "azure-acr-deployment"
+                  : label === "azure-acr-deployment"
+              );
+
+              if (!hasLabel) {
+                core.setFailed(
+                  "The issue must have the azure-acr-deployment label."
+                );
+                return;
+              }
+            }
+
+            const body = issue.body || "";
+
+            function field(name, required = true) {
+              const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+              const regex = new RegExp(
+                "^###\\s+" + escaped + "\\s*\\r?\\n([\\s\\S]*?)(?=\\r?\\n###\\s+|$)",
+                "im"
+              );
+              const match = body.match(regex);
+
+              if (!match) {
+                if (required) {
+                  throw new Error(`Missing Issue Form field: ${name}`);
+                }
+                return "";
+              }
+
+              const value = match[1].trim();
+              if (!value || value === "_No response_") {
+                if (required) {
+                  throw new Error(`Required field is empty: ${name}`);
+                }
+                return "";
+              }
+
+              return value;
+            }
+
+            try {
+              const ritm = field("ritm");
+              const subscription = field("subscription_id");
+              const resourceGroup = field("resource_group_name");
+              const acrName = field("acr_name");
+              const location = field("location");
+              const networkAccess = field("network_access");
+              const publicNetworkAccess = field("public_network_access");
+              const allowedIpRanges = field("allowed_ip_ranges", false);
+              const domainLabelScope = field("domain_label_scope");
+              const sku = field("sku");
+              const rolePermissions = field("role_assignment_permissions");
+              const availabilityZonesText = field("availability_zones", false);
+
+              if (!/^RITM[0-9]+$/i.test(ritm)) {
+                throw new Error("RITM must look like RITM1234567.");
+              }
+
+              if (!/^[a-zA-Z0-9]{5,50}$/.test(acrName)) {
+                throw new Error(
+                  "ACR name must contain 5-50 alphanumeric characters."
+                );
+              }
+
+              if (!/^[a-zA-Z0-9._()-]+$/.test(resourceGroup)) {
+                throw new Error("Resource group name contains unsupported characters.");
+              }
+
+              const validLocations = [
+                "East US", "West US", "Central US", "Central India",
+                "North Europe", "West Europe", "UK South",
+                "Southeast Asia", "Australia East"
+              ];
+
+              if (!validLocations.includes(location)) {
+                throw new Error(`Unsupported location: ${location}`);
+              }
+
+              if (!["Basic", "Standard", "Premium"].includes(sku)) {
+                throw new Error(`Unsupported ACR SKU: ${sku}`);
+              }
+
+              if (!["Public Endpoint", "Private Endpoint"].includes(networkAccess)) {
+                throw new Error("Invalid network_access selection.");
+              }
+
+              if (!["All networks", "Selected networks", "Disabled"]
+                  .includes(publicNetworkAccess)) {
+                throw new Error("Invalid public_network_access selection.");
+              }
+
+              if (
+                networkAccess === "Private Endpoint" &&
+                publicNetworkAccess !== "Disabled"
+              ) {
+                throw new Error(
+                  "Private Endpoint requests must set public_network_access to Disabled."
+                );
+              }
+
+              if (
+                publicNetworkAccess === "Selected networks" &&
+                sku !== "Premium"
+              ) {
+                throw new Error(
+                  "Selected networks firewall rules require the Premium ACR SKU."
+                );
+              }
+
+              const ipRanges = allowedIpRanges
+                .split(/\r?\n/)
+                .map(line => line.trim())
+                .filter(Boolean);
+
+              if (publicNetworkAccess === "Selected networks" && ipRanges.length === 0) {
+                throw new Error(
+                  "Enter at least one allowed IP range for Selected networks."
+                );
+              }
+
+              if (publicNetworkAccess !== "Selected networks" && ipRanges.length > 0) {
+                throw new Error(
+                  "allowed_ip_ranges must be blank unless Selected networks is chosen."
+                );
+              }
+
+              // Validate IPv4 addresses/CIDRs without adding external dependencies.
+              function validIPv4Cidr(value) {
+                const parts = value.split("/");
+                if (parts.length > 2) return false;
+
+                const octets = parts[0].split(".");
+                if (octets.length !== 4) return false;
+
+                for (const octet of octets) {
+                  if (!/^\d{1,3}$/.test(octet)) return false;
+                  const number = Number(octet);
+                  if (number < 0 || number > 255) return false;
+                }
+
+                if (parts.length === 2) {
+                  if (!/^\d{1,2}$/.test(parts[1])) return false;
+                  const prefix = Number(parts[1]);
+                  if (prefix < 0 || prefix > 32) return false;
+                }
+
+                return true;
+              }
+
+              for (const ip of ipRanges) {
+                if (!validIPv4Cidr(ip)) {
+                  throw new Error(`Invalid IPv4 address/CIDR: ${ip}`);
+                }
+              }
+
+              const zonesEnabled =
+                /Enable Availability Zones/i.test(availabilityZonesText);
+
+              core.setOutput("issue_number", String(issueNumber));
+              core.setOutput("ritm", ritm);
+              core.setOutput("subscription_label", subscription);
+              core.setOutput("resource_group_name", resourceGroup);
+              core.setOutput("acr_name", acrName);
+              core.setOutput("location", location);
+              core.setOutput("network_access", networkAccess);
+              core.setOutput("public_network_access", publicNetworkAccess);
+              core.setOutput("allowed_ip_ranges_json", JSON.stringify(ipRanges));
+              core.setOutput("domain_label_scope", domainLabelScope);
+              core.setOutput("sku", sku);
+              core.setOutput("role_assignment_permissions", rolePermissions);
+              core.setOutput("availability_zones_enabled", String(zonesEnabled));
+
+              core.info(`Validated ACR request from issue #${issueNumber}.`);
+              core.info(`RITM: ${ritm}`);
+              core.info(`SKU: ${sku}`);
+              core.info(`Public network access: ${publicNetworkAccess}`);
+              core.info(`Allowed IP range count: ${ipRanges.length}`);
+            } catch (error) {
+              core.setFailed(error.message);
+            }
+
+      - name: Resolve Azure subscription
+        id: subscription
+        shell: bash
+        env:
+          SUBSCRIPTION_LABEL: ${{ steps.request.outputs.subscription_label }}
+          AZURE_SUBSCRIPTION_MAP_JSON: ${{ vars.AZURE_SUBSCRIPTION_MAP_JSON }}
+        run: |
+          set -euo pipefail
+
+          : "${AZURE_SUBSCRIPTION_MAP_JSON:?Configure the AZURE_SUBSCRIPTION_MAP_JSON GitHub variable}"
+
+          SUBSCRIPTION_ID="$(
+            python3 -c '
+          import json, os, sys
+          mapping = json.loads(os.environ["AZURE_SUBSCRIPTION_MAP_JSON"])
+          label = os.environ["SUBSCRIPTION_LABEL"]
+          value = mapping.get(label, "")
+          if not value:
+              sys.exit("No subscription ID configured for: " + label)
+          print(value)
+          '
+          )"
+
+          if [[ ! "$SUBSCRIPTION_ID" =~ ^[0-9a-fA-F-]{36}$ ]]; then
+            echo "::error::The mapped subscription ID is not a valid GUID."
+            exit 1
+          fi
+
+          echo "subscription_id=$SUBSCRIPTION_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Azure Login using OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ steps.subscription.outputs.subscription_id }}
+
+      - name: Select Terraform version
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false
+
+      - name: Verify required Terraform variables
+        shell: bash
+        env:
+          TFSTATE_RESOURCE_GROUP: ${{ vars.TFSTATE_RESOURCE_GROUP }}
+          TFSTATE_STORAGE_ACCOUNT: ${{ vars.TFSTATE_STORAGE_ACCOUNT }}
+          TFSTATE_CONTAINER: ${{ vars.TFSTATE_CONTAINER }}
+        run: |
+          set -euo pipefail
+
+          : "${TFSTATE_RESOURCE_GROUP:?Set GitHub variable TFSTATE_RESOURCE_GROUP}"
+          : "${TFSTATE_STORAGE_ACCOUNT:?Set GitHub variable TFSTATE_STORAGE_ACCOUNT}"
+          : "${TFSTATE_CONTAINER:?Set GitHub variable TFSTATE_CONTAINER}"
+
+          test -d "$TF_WORKING_DIR" || {
+            echo "::error::Terraform directory not found: $TF_WORKING_DIR"
+            exit 1
+          }
+
+      - name: Generate Terraform input file
+        shell: bash
+        env:
+          RITM: ${{ steps.request.outputs.ritm }}
+          SUBSCRIPTION_ID: ${{ steps.subscription.outputs.subscription_id }}
+          RESOURCE_GROUP_NAME: ${{ steps.request.outputs.resource_group_name }}
+          ACR_NAME: ${{ steps.request.outputs.acr_name }}
+          LOCATION: ${{ steps.request.outputs.location }}
+          SKU: ${{ steps.request.outputs.sku }}
+          PUBLIC_NETWORK_ACCESS: ${{ steps.request.outputs.public_network_access }}
+          ALLOWED_IP_RANGES_JSON: ${{ steps.request.outputs.allowed_ip_ranges_json }}
+          DOMAIN_LABEL_SCOPE: ${{ steps.request.outputs.domain_label_scope }}
+          ROLE_ASSIGNMENT_PERMISSIONS: ${{ steps.request.outputs.role_assignment_permissions }}
+          AVAILABILITY_ZONES_ENABLED: ${{ steps.request.outputs.availability_zones_enabled }}
+        run: |
+          set -euo pipefail
+
+          export RITM SUBSCRIPTION_ID RESOURCE_GROUP_NAME ACR_NAME LOCATION SKU
+          export PUBLIC_NETWORK_ACCESS ALLOWED_IP_RANGES_JSON
+          export DOMAIN_LABEL_SCOPE ROLE_ASSIGNMENT_PERMISSIONS AVAILABILITY_ZONES_ENABLED
+
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          access = os.environ["PUBLIC_NETWORK_ACCESS"]
+          ip_ranges = json.loads(os.environ["ALLOWED_IP_RANGES_JSON"])
+
+          public_enabled = access != "Disabled"
+
+          network_rules = None
+          if access == "Selected networks":
+              network_rules = {
+                  "default_action": "Deny",
+                  "ip_rules": [
+                      {"action": "Allow", "ip_range": ip}
+                      for ip in ip_ranges
+                  ],
+              }
+
+          # Names here must match the root Terraform input variables.
+          tfvars = {
+              "ritm": os.environ["RITM"],
+              "subscription_id": os.environ["SUBSCRIPTION_ID"],
+              "resource_group_name": os.environ["RESOURCE_GROUP_NAME"],
+              "acr_name": os.environ["ACR_NAME"],
+              "location": os.environ["LOCATION"],
+              "sku_name": os.environ["SKU"],
+              "public_network_access_enabled": public_enabled,
+              "network_rule_set": network_rules,
+              "domain_label_scope": os.environ["DOMAIN_LABEL_SCOPE"],
+              "role_assignment_permissions": os.environ["ROLE_ASSIGNMENT_PERMISSIONS"],
+              "zone_redundancy_enabled": (
+                  os.environ["AVAILABILITY_ZONES_ENABLED"].lower() == "true"
+              ),
+          }
+
+          path = Path(os.environ["TF_WORKING_DIR"]) / "request.auto.tfvars.json"
+          path.write_text(json.dumps(tfvars, indent=2) + "\n", encoding="utf-8")
+          print(f"Generated {path}")
+          PY
+
+      - name: Terraform Format Check
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        shell: bash
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ steps.subscription.outputs.subscription_id }}
+          TFSTATE_RESOURCE_GROUP: ${{ vars.TFSTATE_RESOURCE_GROUP }}
+          TFSTATE_STORAGE_ACCOUNT: ${{ vars.TFSTATE_STORAGE_ACCOUNT }}
+          TFSTATE_CONTAINER: ${{ vars.TFSTATE_CONTAINER }}
+        run: |
+          set -euo pipefail
+
+          terraform init \
+            -input=false \
+            -backend-config="resource_group_name=${TFSTATE_RESOURCE_GROUP}" \
+            -backend-config="storage_account_name=${TFSTATE_STORAGE_ACCOUNT}" \
+            -backend-config="container_name=${TFSTATE_CONTAINER}" \
+            -backend-config="key=acr-nonprod.tfstate"
+
+      - name: Terraform Validate
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        shell: bash
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ steps.subscription.outputs.subscription_id }}
+        run: |
+          set -euo pipefail
+          terraform plan \
+            -input=false \
+            -lock-timeout=5m \
+            -out=acr.tfplan
+
+      - name: Save Terraform Plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: acr-terraform-plan-${{ github.run_id }}
+          path: |
+            ${{ env.TF_WORKING_DIR }}/acr.tfplan
+            ${{ env.TF_WORKING_DIR }}/request.auto.tfvars.json
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Terraform Plan Summary
+        shell: bash
+        env:
+          RITM: ${{ steps.request.outputs.ritm }}
+          ACR_NAME: ${{ steps.request.outputs.acr_name }}
+          PUBLIC_NETWORK_ACCESS: ${{ steps.request.outputs.public_network_access }}
+        run: |
+          {
+            echo "### ACR Terraform Plan"
+            echo "- RITM: \`$RITM\`"
+            echo "- ACR: \`$ACR_NAME\`"
+            echo "- Public network access: \`$PUBLIC_NETWORK_ACCESS\`"
+            echo "- Plan artifact: \`acr-terraform-plan-${GITHUB_RUN_ID}\`"
+            echo ""
+            echo "Review the plan before applying."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  apply:
+    name: Apply Terraform Plan
+    needs: validate-and-plan
+    runs-on: [self-hosted]
+
+    # Configure required reviewers on this GitHub Environment.
+    environment: azure-acr-nonprod-apply
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Terraform Plan
+        uses: actions/download-artifact@v4
+        with:
+          name: acr-terraform-plan-${{ github.run_id }}
+          path: ${{ env.TF_WORKING_DIR }}
+
+      - name: Azure Login using OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ needs.validate-and-plan.outputs.subscription_id }}
+
+      - name: Select Terraform version
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        shell: bash
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ needs.validate-and-plan.outputs.subscription_id }}
+          TFSTATE_RESOURCE_GROUP: ${{ vars.TFSTATE_RESOURCE_GROUP }}
+          TFSTATE_STORAGE_ACCOUNT: ${{ vars.TFSTATE_STORAGE_ACCOUNT }}
+          TFSTATE_CONTAINER: ${{ vars.TFSTATE_CONTAINER }}
+        run: |
+          set -euo pipefail
+          terraform init \
+            -input=false \
+            -backend-config="resource_group_name=${TFSTATE_RESOURCE_GROUP}" \
+            -backend-config="storage_account_name=${TFSTATE_STORAGE_ACCOUNT}" \
+            -backend-config="container_name=${TFSTATE_CONTAINER}" \
+            -backend-config="key=acr-nonprod.tfstate"
+
+      - name: Terraform Apply
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        shell: bash
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ needs.validate-and-plan.outputs.subscription_id }}
+        run: |
+          set -euo pipefail
+          test -f acr.tfplan || {
+            echo "::error::Terraform plan artifact is missing."
+            exit 1
+          }
+
+          terraform apply \
+            -input=false \
+            -lock-timeout=5m \
+            acr.tfplan

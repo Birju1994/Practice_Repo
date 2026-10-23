@@ -1,0 +1,75 @@
+
+name: SPN Creation Request
+description: Request Service Principal configuration using Azure automation
+title: "[SPN-CREATION] "
+labels:
+  - spn-creation
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Service Principal Request
+        Provide the required details for the SPN automation workflow.
+        Do not enter secret values directly into this issue.
+
+  - type: input
+    id: ritm
+    attributes:
+      label: RITM Number
+      description: Enter the service request number.
+      placeholder: "RITM1234567"
+    validations:
+      required: true
+
+
+  - type: input
+    id: dso
+    attributes:
+      label: DSO
+      description: Enter the DSO identifier or name.
+      placeholder: "Example: DSO name or identifier"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: subscription_id
+    attributes:
+      label: Azure Subscription
+      description: Select the target Azure subscription.
+      options:
+        - Azure Subscription 1
+        - FAAST NON_PROD
+        - FAAST PROD
+        - Data & Analysis PaaS Non-Prod
+        - Data & Analysis PaaS Prod
+    validations:
+      required: true
+
+  - type: input
+    id: application_id
+    attributes:
+      label: Application ID
+      description: Enter the existing Azure App Registration client ID, if applicable.
+      placeholder: "00000000-0000-0000-0000-000000000000"
+    validations:
+      required: true
+
+
+  - type: input
+    id: keyvalut_name
+    attributes:
+      label: Key Vault Name
+      description: Enter the existing Azure Key Vault name.
+      placeholder: "kv-example-nonprod"
+    validations:
+      required: true
+
+  - type: input
+    id: keyvault_secret
+    attributes:
+      label: Key Vault Secret Name
+      description: Enter the name of the Key Vault secret to create or update. Do not enter the secret value.
+      placeholder: "spn-client-secret"
+    validations:
+      required: true
+

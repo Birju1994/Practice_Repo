@@ -1,0 +1,141 @@
+name: Renew Brijendra-App Secret
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: brijendra-app-secret-rotation
+  cancel-in-progress: false
+
+jobs:
+  rotate-secret:
+    if: >-
+      github.event.label.name == 'renew-app-secret' &&
+      (
+        github.event.issue.author_association == 'OWNER' ||
+        github.event.issue.author_association == 'MEMBER' ||
+        github.event.issue.author_association == 'COLLABORATOR'
+      )
+
+    runs-on: [self-hosted]
+
+    environment:
+      name: app-secret-rotation
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: Azure_App_Secret_Rotation
+
+    env:
+      # Existing Brijendra-App registration
+      TF_VAR_application_client_id: ${{ vars.BRIJENDRA_APP_CLIENT_ID }}
+
+      # Unique request ID: each issue is a separate rotation request
+      TF_VAR_rotation_id: ${{ github.event.issue.number }}
+
+      TF_VAR_github_repository: ${{ github.repository }}
+      TF_VAR_github_environment: app-secret-rotation
+      TF_VAR_github_secret_name: AZURE_CLIENT_SECRET
+
+      # Working automation identity, separate from Brijendra-App
+      ARM_CLIENT_ID: ${{ secrets.ROTATION_AUTOMATION_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.ROTATION_AUTOMATION_CLIENT_SECRET }}
+      ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Token must be authorized to update GitHub Environment secrets
+      GITHUB_TOKEN: ${{ secrets.GH_SECRETS_TOKEN }}
+
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate request
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          set -euo pipefail
+
+          ticket_id="$(
+            printf '%s\n' "$ISSUE_BODY" |
+            sed -n '/^### Change Ticket ID$/,/^### /p' |
+            sed '1d;$d' |
+            tr -d '\r' |
+            sed '/^[[:space:]]*$/d' |
+            head -n 1 |
+            xargs
+          )"
+
+          if [[ ! "$ticket_id" =~ ^RITM[0-9]+$ ]]; then
+            echo "Invalid or missing change ticket ID."
+            exit 1
+          fi
+
+          echo "Validated change ticket: $ticket_id"
+          echo "Request issue: #${{ github.event.issue.number }}"
+
+      - name: Check required configuration
+        run: |
+          set -euo pipefail
+
+          : "${TF_VAR_application_client_id:?Missing BRIJENDRA_APP_CLIENT_ID}"
+          : "${ARM_CLIENT_ID:?Missing automation client ID}"
+          : "${ARM_CLIENT_SECRET:?Missing automation client secret}"
+          : "${ARM_TENANT_ID:?Missing tenant ID}"
+          : "${ARM_SUBSCRIPTION_ID:?Missing subscription ID}"
+          : "${GITHUB_TOKEN:?Missing GitHub secrets-write token}"
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.14.6"
+          terraform_wrapper: false
+
+      - name: Terraform format, init and validate
+        env:
+          TFSTATE_RESOURCE_GROUP: ${{ vars.TFSTATE_RESOURCE_GROUP }}
+          TFSTATE_STORAGE_ACCOUNT: ${{ vars.TFSTATE_STORAGE_ACCOUNT }}
+          TFSTATE_CONTAINER: ${{ vars.TFSTATE_CONTAINER }}
+        run: |
+          set -euo pipefail
+
+          terraform fmt -check -recursive
+
+          terraform init \
+            -backend-config="resource_group_name=${TFSTATE_RESOURCE_GROUP}" \
+            -backend-config="storage_account_name=${TFSTATE_STORAGE_ACCOUNT}" \
+            -backend-config="container_name=${TFSTATE_CONTAINER}" \
+            -backend-config="key=brijendra-app-secret-rotation.tfstate" \
+            -backend-config="use_azuread_auth=true"
+
+          terraform validate
+
+      - name: Terraform plan
+        run: |
+          set -euo pipefail
+          terraform plan -out=tfplan
+
+      - name: Terraform apply
+        run: |
+          set -euo pipefail
+          terraform apply -auto-approve tfplan
+
+      - name: Post completion status
+        if: always()
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          gh api \
+            "repos/${GITHUB_REPOSITORY}/issues/${{ github.event.issue.number }}/comments" \
+            -f body="Brijendra-App secret rotation workflow status: ${JOB_STATUS}. Secret value is not included in this comment."
