@@ -21,3 +21,19 @@ resource "azurerm_key_vault_secret" "secret" {
 
 
 
+
+locals {
+  effective_network_rules = (
+    var.public_network_access == "Selected networks" &&
+    length(var.allowed_ip_ranges) > 0
+  ) ? {
+    default_action = "Deny"
+    ip_rules = [
+      for ip in var.allowed_ip_ranges : {
+        action   = "Allow"
+        ip_range = ip
+      }
+    ]
+  } : null
+
+

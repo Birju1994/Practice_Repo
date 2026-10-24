@@ -4,6 +4,11 @@ variable "resource_group_name" {
   type        = string
 }
 
+variable "location" {
+  description = "Azure location for the Azure Container Registry"
+  type        = string
+}
+
 variable "acr_name" {
   description = "Globally unique Azure Container Registry name"
   type        = string
@@ -116,3 +121,41 @@ variable "network_rule_set" {
     error_message = "Network default_action must be Allow or Deny."
   }
 }
+
+
+variable "public_network_access" {
+  description = "ACR network access mode"
+  type        = string
+  default     = "All networks"
+
+  validation {
+    condition = contains([
+      "All networks",
+      "Selected networks"
+    ], var.public_network_access)
+
+    error_message = "public_network_access must be All networks or Selected networks."
+  }
+}
+
+variable "allowed_ip_ranges" {
+  description = "List of public IP addresses or CIDR ranges allowed to access ACR"
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for ip in var.allowed_ip_ranges :
+      can(cidrhost(ip, 0))
+    ])
+
+    error_message = "Each allowed_ip_ranges entry must be a valid IP address or CIDR range."
+  }
+}
+
+
+
+
+
+
+

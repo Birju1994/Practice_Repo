@@ -1,10 +1,10 @@
 
 resource_group_name           = "Axion-State-RG"
 acr_name                      = "acr25github03dev"
-sku_name                      = "Standard"
+sku_name                      = "Premium"
 admin_enabled                 = false
 public_network_access_enabled = true
-retention_policy_in_days      = 7
+retention_policy_in_days      = 90
 zone_redundancy_enabled       = true
 
 tags = {
@@ -36,8 +36,10 @@ network_rule_set = {
   ip_rules = [
     {
       action   = "Allow"
-      ip_range = "172.178.12.149/32"
+      ip_range = "172.212.77.60"
     }
   ]
 }
+
+domain_name_label_scope = "ResourceGroupReuse"
 

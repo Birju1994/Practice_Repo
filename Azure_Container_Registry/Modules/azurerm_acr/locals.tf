@@ -1,7 +1,7 @@
+
 locals {
   is_premium = var.sku_name == "Premium"
 
-  # Premium-only features
   effective_zone_redundancy = local.is_premium ? var.zone_redundancy_enabled : null
 
   effective_retention_days = local.is_premium ? var.retention_policy_in_days : null
@@ -9,4 +9,5 @@ locals {
   effective_georeplications = local.is_premium ? var.georeplications_config : {}
 
   effective_network_rules = local.is_premium ? var.network_rule_set : null
+
 }

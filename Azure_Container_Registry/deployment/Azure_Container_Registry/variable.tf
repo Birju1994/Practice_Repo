@@ -148,4 +148,22 @@ variable "allowed_ip_ranges" {
   }
 }
 
+variable "domain_name_label_scope" {
+  description = "Domain Name Label reuse scope for ACR"
+  type        = string
+  default     = "TenantReuse"
+
+  validation {
+    condition = contains([
+      "Unsecure",
+      "TenantReuse",
+      "SubscriptionReuse",
+      "ResourceGroupReuse",
+      "NoReuse"
+    ], var.domain_name_label_scope)
+
+    error_message = "Invalid Domain Name Label scope."
+  }
+}
+
 

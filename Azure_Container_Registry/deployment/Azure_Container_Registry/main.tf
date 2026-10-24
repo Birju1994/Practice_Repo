@@ -2,7 +2,8 @@ module "container_registry" {
   source = "../../Modules/azurerm_acr"
 
   # Basic ACR configuration
-  resource_group_name           = var.resource_group_name
+  resource_group_name           = data.azurerm_resource_group.rg.name
+  location                      = data.azurerm_resource_group.rg.location
   acr_name                      = var.acr_name
   sku_name                      = var.sku_name
   admin_enabled                 = var.admin_enabled
@@ -28,4 +29,14 @@ module "container_registry" {
   # Identity and tags
   identity_type = var.identity_type
   tags          = var.tags
+}
+
+
+
+
+module "domain_name_label" {
+  depends_on = [module.container_registry]
+  source = "../../Modules/azureapi_label"
+  acr_id = module.container_registry.acr_id
+  domain_name_label_scope    = var.domain_name_label_scope
 }
