@@ -22,6 +22,18 @@ body:
       required: true
 
   - type: dropdown
+    id: dso
+    attributes:
+       label: dso
+       description: "Operation ownership for this resources"
+       options:
+         - Client
+         - Selftest
+       default: 0
+    validations:
+      required: true
+
+  - type: dropdown
     id: subscription_id
     attributes:
       label: subscription_id

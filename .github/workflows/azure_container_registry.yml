@@ -6,10 +6,24 @@ on:
 
   workflow_dispatch:
     inputs:
-      issue_number:
-        description: "Existing GitHub Issue number containing the ACR request"
-        required: true
-        type: string
+      subscription_id:
+        description: "Azure subscription friendly name or GUID"
+        required: false
+        default: "Non-PROD"
+      resoruce_group_name:
+        description: "Existing Resource Group Name"
+        required: false
+        default: "Axion-State-RG"
+      acr_name:
+        description: "Container Registry name"
+        required: false
+      ritm:
+        description: "Change / RITM number for audit traceability"
+        required: false
+      dso:
+        description: "DSO / operational ownership"
+        required: false
+        default: "Selftest"
 
 permissions:
   contents: read
@@ -28,14 +42,15 @@ env:
 jobs:
   validate-and-plan:
     name: Validate Issue and Create Terraform Plan
-    runs-on: [self-hosted]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
 
     if: >-
       ${{
-        (github.event_name == 'issues' &&
-         github.event.action == 'labeled' &&
+        github.event_name == 'workflow_dispatch' ||
+        ( github.event.action == 'labeled' &&
          github.event.label.name == 'azure-acr-deployment') ||
-        github.event_name == 'workflow_dispatch'
+        github.event_name == 'issues'
       }}
 
     environment: azure-acr-nonprod
@@ -453,7 +468,7 @@ jobs:
   apply:
     name: Apply Terraform Plan
     needs: validate-and-plan
-    runs-on: [self-hosted]
+    runs-on: ubuntu-latest
 
     # Configure required reviewers on this GitHub Environment.
     environment: azure-acr-nonprod-apply
