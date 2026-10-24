@@ -43,7 +43,10 @@ jobs:
   validate-and-plan:
     name: Validate Issue and Create Terraform Plan
     runs-on: ubuntu-latest
+<<<<<<< HEAD
     timeout-minutes: 60
+=======
+>>>>>>> 3617d242494f5f226d721e9c72036433f7aa01ca
 
     if: >-
       ${{
