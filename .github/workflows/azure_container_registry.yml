@@ -28,7 +28,7 @@ env:
 jobs:
   validate-and-plan:
     name: Validate Issue and Create Terraform Plan
-    runs-on: [self-hosted]
+    runs-on: ubuntu-latest
 
     if: >-
       ${{
@@ -453,7 +453,7 @@ jobs:
   apply:
     name: Apply Terraform Plan
     needs: validate-and-plan
-    runs-on: [self-hosted]
+    runs-on: ubuntu-latest
 
     # Configure required reviewers on this GitHub Environment.
     environment: azure-acr-nonprod-apply
