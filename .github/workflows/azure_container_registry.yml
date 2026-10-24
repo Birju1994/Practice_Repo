@@ -32,7 +32,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      # Update this path to your Terraform root directory.
       - name: Parse and validate Issue Form
         id: inputs
         uses: actions/github-script@v7
@@ -45,10 +44,8 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const core = require('@actions/core');
             const body = context.payload.issue.body || '';
 
-            // Parse GitHub Issue Form headings.
             const fields = {};
             let current = null;
 
@@ -69,6 +66,7 @@ jobs:
             }
 
             const get = (key) => fields[key] || '';
+
             const required = [
               'ritm', 'dso', 'subscription_id',
               'resource_group_name', 'acr_name', 'location',
@@ -83,8 +81,20 @@ jobs:
               if (!get(key)) errors.push(`Missing: ${key}`);
             }
 
+            if (!/^RITM\d+$/i.test(get('ritm'))) {
+              errors.push('RITM must follow the format RITM1234567.');
+            }
+
+            if (!['Client', 'Selftest'].includes(get('dso'))) {
+              errors.push('Invalid DSO.');
+            }
+
             const acr = get('acr_name');
-            if (acr && !/^az\d{2}[a-z0-9]+acr\d{2}(dev|test|uat|prod)$/.test(acr)) {
+
+            if (
+              acr &&
+              !/^az\d{2}[a-z0-9]+acr\d{2}(dev|test|uat|prod)$/.test(acr)
+            ) {
               errors.push('ACR name does not match the requested naming format.');
             }
 
@@ -168,12 +178,15 @@ jobs:
 
             if (!locations[get('location')]) errors.push('Invalid location.');
             if (!scopes[get('domain_label_scope')]) errors.push('Invalid domain label scope.');
+
             if (!['Basic', 'Standard', 'Premium'].includes(get('sku'))) {
               errors.push('Invalid SKU.');
             }
+
             if (!roleModes[get('role_assignment_permissions')]) {
               errors.push('Invalid role assignment mode.');
             }
+
             if (!['All networks', 'Selected networks', 'Disabled'].includes(get('public_network_access'))) {
               errors.push('Invalid public network access selection.');
             }
@@ -220,20 +233,17 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      # CHANGE THIS PATH to your actual Terraform root.
       - name: Terraform Init
         working-directory: deployment/Azure_Container_Registry
         run: terraform init
 
-      # STAGE 1: VALIDATE
-      - name: Validate
+      - name: Stage 1 - Validate
         working-directory: deployment/Azure_Container_Registry
         run: |
           terraform fmt -check -recursive
           terraform validate
 
-      # STAGE 2: PLAN
-      - name: Plan
+      - name: Stage 2 - Plan
         working-directory: deployment/Azure_Container_Registry
         run: |
           terraform plan \
@@ -247,8 +257,7 @@ jobs:
           path: deployment/Azure_Container_Registry/tfplan
           retention-days: 1
 
-      # STAGE 3: APPLY
-      - name: Apply
+      - name: Stage 3 - Apply
         working-directory: deployment/Azure_Container_Registry
         run: terraform apply -auto-approve tfplan
 
@@ -257,9 +266,11 @@ jobs:
         uses: actions/github-script@v7
         env:
           ACR_NAME: ${{ steps.inputs.outputs.acr_name }}
+          JOB_STATUS: ${{ job.status }}
         with:
           script: |
-            const success = '${{ job.status }}' === 'success';
+            const success = process.env.JOB_STATUS === 'success';
+
             const message = success
               ? `Terraform deployment completed successfully for ACR: ${process.env.ACR_NAME || 'requested ACR'}.`
               : 'ACR deployment workflow failed. Check the Actions logs for the failing step.';
