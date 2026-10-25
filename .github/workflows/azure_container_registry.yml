@@ -1,6 +1,3 @@
-
-name: Azure Container Registry Deployment
-
 on:
   issues:
     types: [opened, reopened, labeled, edited]
@@ -50,10 +47,10 @@ jobs:
             let current = null;
 
             for (const line of body.split(/\r?\n/)) {
-              const heading = line.match(/^###\s+(.+?)\s*$/);
+              const heading = line.match(/^###\s+(.+?)(?:\s+\*)?\s*$/);
 
               if (heading) {
-                current = heading[1].trim().toLowerCase();
+                current = heading[1].trim().toLowerCase().replace(/\s+/g, '_');
                 fields[current] = [];
               } else if (current) {
                 fields[current].push(line);
@@ -98,7 +95,14 @@ jobs:
               errors.push('ACR name does not match the requested naming format.');
             }
 
-            const ips = get('allowed_ip_ranges')
+            // Issue form text can contain Markdown code fences; remove fence lines
+            // before validating the actual IPv4/CIDR values.
+            const allowedIpRanges = get('allowed_ip_ranges')
+              .replace(/^\s*```[^\r\n]*\r?\n?/gm, '')
+              .replace(/^\s*```\s*$/gm, '')
+              .trim();
+
+            const ips = allowedIpRanges
               .split(/\r?\n/)
               .map(x => x.trim())
               .filter(Boolean);
@@ -141,10 +145,20 @@ jobs:
               'Azure Subscription 1': process.env.SUB_AZURE_1
             };
 
-            const subscriptionId = subscriptions[get('subscription_id')];
+            const selectedSubscription = get('subscription_id');
+            const subscriptionId = (subscriptions[selectedSubscription] || '').trim();
+            const subscriptionVariableNames = {
+              'FAAST NON_PROD': 'SUB_FAAS_NON_PROD',
+              'FAAST PROD': 'SUB_FAAS_PROD',
+              'Data & Analysis PaaS Non-Prod': 'SUB_DAAS_NON_PROD',
+              'Data & Analysis PaaS Prod': 'SUB_DAAS_PROD',
+              'Azure Subscription 1': 'SUB_AZURE_1'
+            };
 
-            if (!subscriptionId) {
-              errors.push('Selected subscription has no configured repository variable.');
+            if (!Object.prototype.hasOwnProperty.call(subscriptions, selectedSubscription)) {
+              errors.push(`Unknown subscription option: "${selectedSubscription}". Check the Issue Form option and subscription mapping.`);
+            } else if (!subscriptionId) {
+              errors.push(`Selected subscription "${selectedSubscription}" is missing its GitHub Actions repository/environment variable: ${subscriptionVariableNames[selectedSubscription]}. Configure it under Settings → Secrets and variables → Actions → Variables (or the acr-deployment environment variables).`);
             } else if (
               !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(subscriptionId)
             ) {
@@ -196,7 +210,7 @@ jobs:
               return;
             }
 
-            const zones = /-\s*\[x\]\s*Enable Availability Zones/i
+            const zones = /-\s*\\[x\\]\s*Enable Availability Zones/i
               .test(get('availability_zones'));
 
             const tfvars = {
@@ -246,8 +260,8 @@ jobs:
       - name: Stage 2 - Plan
         working-directory: deployment/Azure_Container_Registry
         run: |
-          terraform plan \
-            -var-file="${GITHUB_WORKSPACE}/terraform.tfvars.json" \
+          terraform plan \\
+            -var-file="${GITHUB_WORKSPACE}/terraform.tfvars.json" \\
             -out=tfplan
 
       - name: Upload Terraform plan
