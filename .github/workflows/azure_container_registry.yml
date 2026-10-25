@@ -137,32 +137,63 @@ jobs:
               errors.push('Private Endpoint requests must set public network access to Disabled.');
             }
 
-            const subscriptions = {
-              'FAAST NON_PROD': process.env.SUB_FAAS_NON_PROD,
-              'FAAST PROD': process.env.SUB_FAAS_PROD,
-              'Data & Analysis PaaS Non-Prod': process.env.SUB_DAAS_NON_PROD,
-              'Data & Analysis PaaS Prod': process.env.SUB_DAAS_PROD,
-              'Azure Subscription 1': process.env.SUB_AZURE_1
+            // Accept both the human-readable Issue Form labels and the
+            // literal option values such as SUB_AZURE_1.
+            const subscriptionOptions = {
+              'FAAST NON_PROD': {
+                envName: 'SUB_FAAS_NON_PROD',
+                value: process.env.SUB_FAAS_NON_PROD
+              },
+              'SUB_FAAS_NON_PROD': {
+                envName: 'SUB_FAAS_NON_PROD',
+                value: process.env.SUB_FAAS_NON_PROD
+              },
+              'FAAST PROD': {
+                envName: 'SUB_FAAS_PROD',
+                value: process.env.SUB_FAAS_PROD
+              },
+              'SUB_FAAS_PROD': {
+                envName: 'SUB_FAAS_PROD',
+                value: process.env.SUB_FAAS_PROD
+              },
+              'Data & Analysis PaaS Non-Prod': {
+                envName: 'SUB_DAAS_NON_PROD',
+                value: process.env.SUB_DAAS_NON_PROD
+              },
+              'SUB_DAAS_NON_PROD': {
+                envName: 'SUB_DAAS_NON_PROD',
+                value: process.env.SUB_DAAS_NON_PROD
+              },
+              'Data & Analysis PaaS Prod': {
+                envName: 'SUB_DAAS_PROD',
+                value: process.env.SUB_DAAS_PROD
+              },
+              'SUB_DAAS_PROD': {
+                envName: 'SUB_DAAS_PROD',
+                value: process.env.SUB_DAAS_PROD
+              },
+              'Azure Subscription 1': {
+                envName: 'SUB_AZURE_1',
+                value: process.env.SUB_AZURE_1
+              },
+              'SUB_AZURE_1': {
+                envName: 'SUB_AZURE_1',
+                value: process.env.SUB_AZURE_1
+              }
             };
 
             const selectedSubscription = get('subscription_id');
-            const subscriptionId = (subscriptions[selectedSubscription] || '').trim();
-            const subscriptionVariableNames = {
-              'FAAST NON_PROD': 'SUB_FAAS_NON_PROD',
-              'FAAST PROD': 'SUB_FAAS_PROD',
-              'Data & Analysis PaaS Non-Prod': 'SUB_DAAS_NON_PROD',
-              'Data & Analysis PaaS Prod': 'SUB_DAAS_PROD',
-              'Azure Subscription 1': 'SUB_AZURE_1'
-            };
+            const selectedConfig = subscriptionOptions[selectedSubscription];
+            const subscriptionId = (selectedConfig?.value || '').trim();
 
-            if (!Object.prototype.hasOwnProperty.call(subscriptions, selectedSubscription)) {
-              errors.push(`Unknown subscription option: "${selectedSubscription}". Check the Issue Form option and subscription mapping.`);
+            if (!selectedConfig) {
+              errors.push(`Unknown subscription option: "${selectedSubscription}". Ensure the Issue Form option matches a key in subscriptionOptions.`);
             } else if (!subscriptionId) {
-              errors.push(`Selected subscription "${selectedSubscription}" is missing its GitHub Actions repository/environment variable: ${subscriptionVariableNames[selectedSubscription]}. Configure it under Settings → Secrets and variables → Actions → Variables (or the acr-deployment environment variables).`);
+              errors.push(`Selected subscription "${selectedSubscription}" has an empty GitHub Actions variable: ${selectedConfig.envName}. Configure it under Settings → Secrets and variables → Actions → Variables, or in the acr-deployment environment variables.`);
             } else if (
               !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(subscriptionId)
             ) {
-              errors.push('Configured subscription ID is not a valid GUID.');
+              errors.push(`The configured value in ${selectedConfig.envName} is not a valid Azure subscription GUID.`);
             }
 
             const locations = {
