@@ -43,7 +43,7 @@ body:
         - FAAST PROD
         - Data & Analysis PaaS Non-Prod
         - Data & Analysis PaaS Prod
-        - Azure Subscription 1
+        - SUB_AZURE_1
     validations:
       required: true
 
