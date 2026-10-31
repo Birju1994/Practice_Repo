@@ -24,7 +24,7 @@ body:
   - type: dropdown
     id: dso
     attributes:
-       label: dso
+       label: DSO
        description: "Operation ownership for this resources"
        options:
          - Client
