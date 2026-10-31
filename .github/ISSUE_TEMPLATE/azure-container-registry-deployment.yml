@@ -29,7 +29,7 @@ body:
        options:
          - Client
          - Selftest
-       default: 0
+       default: 1
     validations:
       required: true
 
