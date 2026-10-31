@@ -15,7 +15,7 @@ body:
   - type: input
     id: ritm
     attributes:
-      label: ritm
+      label: RITM
       description: "RITM number for audit traceability. Example: RITM1234567"
       placeholder: RITM1234567
     validations:
