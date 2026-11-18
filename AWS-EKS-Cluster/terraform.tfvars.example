@@ -1,0 +1,64 @@
+# ==============================================================================
+# Sample Variable Inputs (terraform.tfvars.example)
+# ==============================================================================
+# Rename this file to "terraform.tfvars" and customize the values as needed.
+# ==============================================================================
+
+aws_region   = "ap-south-1"
+environment  = "prod"
+project_name = "enterprise"
+
+# EKS Cluster Settings
+cluster_name    = "prod-eks-cluster"
+cluster_version = "1.30"
+
+# VPC & Networking
+vpc_cidr             = "10.0.0.0/16"
+availability_zones   = ["ap-south-1a", "ap-south-1b", "ap-south-1c"]
+public_subnet_cidrs  = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
+private_subnet_cidrs = ["10.0.11.0/24", "10.0.12.0/24", "10.0.13.0/24"]
+
+# Set to false for High Availability multi-AZ NAT Gateways (1 per AZ) in Production.
+# Set to true only in Dev/Test environments to save NAT Gateway costs.
+single_nat_gateway = false
+
+# API Server Endpoint Access (Maximum Security: Strictly Private)
+# - cluster_endpoint_private_access: Kubernetes API server is accessible from within the VPC.
+# - cluster_endpoint_public_access: When FALSE, the API endpoint has NO public IP and is NOT reachable from the internet.
+cluster_endpoint_private_access = true
+cluster_endpoint_public_access  = false
+
+# Only used if cluster_endpoint_public_access is set to true
+cluster_endpoint_public_access_cidrs = ["0.0.0.0/0"]
+
+# AWS PrivateLink VPC Endpoints: Keep AWS API calls (ECR, S3, STS, CloudWatch, SSM)
+# 100% private inside the AWS backbone without internet traversal.
+enable_vpc_endpoints = true
+
+# SSM-Managed Secure Bastion: Deployed in the private subnet with zero open inbound ports.
+# Used to securely manage the private EKS cluster via AWS Systems Manager Session Manager.
+enable_bastion        = true
+bastion_instance_type = "t3.micro"
+
+# CloudWatch Log Retention
+cluster_log_retention_days = 30
+
+# Worker Node Group Settings
+node_group_name     = "primary-apps"
+node_instance_types = ["t3.small"] # Free-Tier eligible in ap-south-1 (2 vCPU, 2GB RAM)
+node_capacity_type  = "ON_DEMAND"
+node_desired_size   = 2
+node_min_size       = 1
+node_max_size       = 3
+node_disk_size      = 20
+
+# Modern EKS Authentication: Additional Admin IAM ARNs to grant full cluster admin rights
+admin_principal_arns = [
+  # "arn:aws:iam::123456789012:role/DevOpsAdminRole",
+  # "arn:aws:iam::123456789012:user/brijendra.admin"
+]
+
+custom_tags = {
+  CostCenter = "Infrastructure"
+  Owner      = "DevOps-Team"
+}
