@@ -1,0 +1,423 @@
+
+name: EKS Cluster - Deployment
+
+on:
+  issues:
+    types: [opened, edited, reopened, labeled]
+
+permissions:
+  contents: read
+  id-token: write
+  issues: write
+
+env:
+  TF_ROOT: deployment/EKS
+
+jobs:
+
+  # ==========================================
+  # JOB 1: VALIDATE INPUTS AND TERRAFORM PLAN
+  # ==========================================
+
+  terraform-plan:
+
+    if: >
+      github.event_name == 'issues' &&
+      contains(github.event.issue.labels.*.name, 'eks-cluster-deployment')
+
+    runs-on: ubuntu-latest
+
+    outputs:
+      aws_region: ${{ steps.extract.outputs.aws_region }}
+      role_to_assume: ${{ steps.extract.outputs.role_to_assume }}
+      expected_account_id: ${{ steps.extract.outputs.expected_account_id }}
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # --------------------------------------
+      # Extract and validate issue form values
+      # --------------------------------------
+
+      - name: Extract and Validate Issue Inputs
+        id: extract
+        uses: actions/github-script@v7
+
+        env:
+          AWS_ROLE_NON_PROD: ${{ vars.AWS_ROLE_NON_PROD }}
+          AWS_ROLE_PROD: ${{ vars.AWS_ROLE_PROD }}
+          AWS_ROLE_BRIJENDRAAWS: ${{ vars.AWS_ROLE_BRIJENDRAAWS }}
+
+          AWS_ACCOUNT_ID_NON_PROD: ${{ vars.AWS_ACCOUNT_ID_NON_PROD }}
+          AWS_ACCOUNT_ID_PROD: ${{ vars.AWS_ACCOUNT_ID_PROD }}
+          AWS_ACCOUNT_ID_BRIJENDRAAWS: ${{ vars.AWS_ACCOUNT_ID_BRIJENDRAAWS }}
+
+          TF_ROOT: ${{ env.TF_ROOT }}
+
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            const body = context.payload.issue.body || '';
+
+            function getField(label) {
+              const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+              const regex = new RegExp(
+                `###\\s*${escaped}\\s*\\r?\\n+([\\s\\S]*?)(?=\\r?\\n###\\s|$)`,
+                'i'
+              );
+
+              const match = body.match(regex);
+
+              if (!match) return '';
+
+              const value = match[1].trim();
+
+              return /^_No response_$/i.test(value) ? '' : value;
+            }
+
+            function required(label) {
+              const value = getField(label);
+
+              if (!value) {
+                throw new Error(`Missing mandatory field: ${label}`);
+              }
+
+              return value;
+            }
+
+            function csv(value) {
+              return value
+                .split(',')
+                .map(item => item.trim())
+                .filter(Boolean);
+            }
+
+            function validateIds(values, prefix, field) {
+              if (
+                values.length === 0 ||
+                values.some(value => !new RegExp(
+                  `^${prefix}-[a-f0-9]+$`, 'i'
+                ).test(value))
+              ) {
+                throw new Error(`Invalid ${field}`);
+              }
+
+              return values;
+            }
+
+            // --------------------------------
+            // Read issue form values
+            // --------------------------------
+
+            const ritm = required('RITM');
+            const dso = required('DSO');
+            const account = required('account');
+            const region = required('Region');
+            const environment = required('Environment');
+
+            const clusterName = required('cluster_name');
+            const k8sVersion = required('kubernetes_version');
+
+            const nodeType = required('node_type');
+            const nodeCount = required('node_count');
+            const instanceType = required('instance_type');
+
+            const vpcId = required('vpc_id');
+            const subnetIds = validateIds(
+              csv(required('subnet_id')),
+              'subnet',
+              'subnet_id'
+            );
+
+            // --------------------------------
+            // General input validation
+            // --------------------------------
+
+            if (!/^RITM\d+$/i.test(ritm)) {
+              throw new Error('Invalid RITM format');
+            }
+
+            if (!['Client', 'Self Test', 'Project'].includes(dso)) {
+              throw new Error('Invalid DSO');
+            }
+
+            if (!['dev', 'test', 'uat', 'nonprod', 'prod'].includes(environment)) {
+              throw new Error('Invalid environment');
+            }
+
+            if (!['eu-west-1', 'eu-central-1', 'ap-south-1'].includes(region)) {
+              throw new Error('Unsupported AWS region');
+            }
+
+            if (!['1.31', '1.30', '1.29', '1.28'].includes(k8sVersion)) {
+              throw new Error('Unsupported Kubernetes version');
+            }
+
+            if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$/.test(clusterName)) {
+              throw new Error('Invalid EKS cluster name');
+            }
+
+            if (!['Managed_Nodes', 'Fargate', 'Hybrid'].includes(nodeType)) {
+              throw new Error('Invalid node_type');
+            }
+
+            if (!/^[1-9]\d*$/.test(nodeCount)) {
+              throw new Error('node_count must be a positive integer');
+            }
+
+            if (!['t3.medium', 't3.micro', 't3.large'].includes(instanceType)) {
+              throw new Error('Invalid EC2 instance type');
+            }
+
+            if (!/^vpc-[a-f0-9]+$/i.test(vpcId)) {
+              throw new Error('Invalid VPC ID');
+            }
+
+            // --------------------------------
+            // Conditional Fargate validation
+            // --------------------------------
+
+            let fargateNamespaces = [];
+            let podExecutionRole = '';
+            let fargateSubnetIds = [];
+
+            if (['Fargate', 'Hybrid'].includes(nodeType)) {
+
+              fargateNamespaces = csv(
+                required('fargate_namespace')
+              );
+
+              podExecutionRole = required('pod_execution_rule');
+
+              fargateSubnetIds = validateIds(
+                csv(required('fargate_subnet_ids')),
+                'subnet',
+                'fargate_subnet_ids'
+              );
+
+              if (
+                !/^arn:aws:iam::\d{12}:role\/[\w+=,.@/-]+$/.test(
+                  podExecutionRole
+                )
+              ) {
+                throw new Error('Invalid pod execution role ARN');
+              }
+            }
+
+            // --------------------------------
+            // AWS account mapping
+            // --------------------------------
+
+            const accounts = {
+              'Non-Prod': {
+                role: process.env.AWS_ROLE_NON_PROD,
+                id: process.env.AWS_ACCOUNT_ID_NON_PROD
+              },
+
+              'prod': {
+                role: process.env.AWS_ROLE_PROD,
+                id: process.env.AWS_ACCOUNT_ID_PROD
+              },
+
+              'brijendraaws': {
+                role: process.env.AWS_ROLE_BRIJENDRAAWS,
+                id: process.env.AWS_ACCOUNT_ID_BRIJENDRAAWS
+              }
+            };
+
+            const target = accounts[account];
+
+            if (!target || !target.role || !target.id) {
+              throw new Error(`AWS account configuration missing: ${account}`);
+            }
+
+            if (!/^\d{12}$/.test(target.id)) {
+              throw new Error('Invalid target AWS account ID');
+            }
+
+            // --------------------------------
+            // Generate Terraform variables
+            // --------------------------------
+
+            const tfvars = {
+              ritm: ritm,
+              dso: dso,
+              account: account,
+              aws_region: region,
+              environment: environment,
+
+              cluster_name: clusterName,
+              kubernetes_version: k8sVersion,
+
+              node_type: nodeType,
+              node_count: Number(nodeCount),
+              instance_type: instanceType,
+
+              vpc_id: vpcId,
+              subnet_ids: subnetIds,
+
+              fargate_namespace: fargateNamespaces,
+              pod_execution_role_arn: podExecutionRole,
+              fargate_subnet_ids: fargateSubnetIds
+            };
+
+            const tfRoot = process.env.TF_ROOT;
+
+            fs.mkdirSync(tfRoot, { recursive: true });
+
+            fs.writeFileSync(
+              path.join(tfRoot, 'terraform.tfvars.json'),
+              JSON.stringify(tfvars, null, 2)
+            );
+
+            core.setOutput('aws_region', region);
+            core.setOutput('role_to_assume', target.role);
+            core.setOutput('expected_account_id', target.id);
+
+            core.info('Issue inputs validated successfully.');
+            core.info('Terraform variables file generated.');
+
+      # --------------------------------------
+      # AWS OIDC Authentication
+      # --------------------------------------
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+
+        with:
+          role-to-assume: ${{ steps.extract.outputs.role_to_assume }}
+          aws-region: ${{ steps.extract.outputs.aws_region }}
+          role-session-name: GitHubActions-EKS-Deployment
+
+      - name: Validate AWS Account Access
+        env:
+          EXPECTED_ACCOUNT_ID: ${{ steps.extract.outputs.expected_account_id }}
+        run: |
+          ACTUAL_ACCOUNT_ID=$(aws sts get-caller-identity \
+            --query Account \
+            --output text)
+
+          echo "Expected Account: $EXPECTED_ACCOUNT_ID"
+          echo "Authenticated Account: $ACTUAL_ACCOUNT_ID"
+
+          if [ "$ACTUAL_ACCOUNT_ID" != "$EXPECTED_ACCOUNT_ID" ]; then
+            echo "AWS account mismatch!"
+            exit 1
+          fi
+
+          echo "AWS account validation successful."
+
+      # --------------------------------------
+      # Terraform Setup
+      # --------------------------------------
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_ROOT }}
+        run: terraform init -input=false
+
+      - name: Terraform Format Check
+        working-directory: ${{ env.TF_ROOT }}
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Validate
+        working-directory: ${{ env.TF_ROOT }}
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: ${{ env.TF_ROOT }}
+        run: |
+          terraform plan \
+            -input=false \
+            -var-file=terraform.tfvars.json \
+            -out=tfplan
+
+      # --------------------------------------
+      # Save Terraform Plan
+      # --------------------------------------
+
+      - name: Upload Terraform Plan
+        uses: actions/upload-artifact@v4
+
+        with:
+          name: eks-terraform-plan
+          path: |
+            ${{ env.TF_ROOT }}/tfplan
+            ${{ env.TF_ROOT }}/terraform.tfvars.json
+          retention-days: 1
+
+  # ==========================================
+  # JOB 2: APPROVED TERRAFORM APPLY
+  # ==========================================
+
+  terraform-apply:
+
+    needs: terraform-plan
+
+    if: >
+      github.event_name == 'issues' &&
+      contains(github.event.issue.labels.*.name, 'eks-cluster-deployment') &&
+      contains(github.event.issue.labels.*.name, 'approved')
+
+    runs-on: ubuntu-latest
+
+    environment: eks-deployment-approval
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download Terraform Plan
+        uses: actions/download-artifact@v4
+
+        with:
+          name: eks-terraform-plan
+          path: ${{ env.TF_ROOT }}
+
+      # --------------------------------------
+      # AWS OIDC Authentication
+      # --------------------------------------
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+
+        with:
+          role-to-assume: ${{ needs.terraform-plan.outputs.role_to_assume }}
+          aws-region: ${{ needs.terraform-plan.outputs.aws_region }}
+          role-session-name: GitHubActions-EKS-Apply
+
+      - name: Validate AWS Account
+        env:
+          EXPECTED_ACCOUNT_ID: ${{ needs.terraform-plan.outputs.expected_account_id }}
+        run: |
+          ACTUAL_ACCOUNT_ID=$(aws sts get-caller-identity \
+            --query Account \
+            --output text)
+
+          if [ "$ACTUAL_ACCOUNT_ID" != "$EXPECTED_ACCOUNT_ID" ]; then
+            echo "AWS account mismatch!"
+            exit 1
+          fi
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_ROOT }}
+        run: terraform init -input=false
+
+      # --------------------------------------
+      # Apply Approved Plan
+      # --------------------------------------
+
+      - name: Terraform Apply
+        working-directory: ${{ env.TF_ROOT }}
+        run: terraform apply -input=false -auto-approve tfplan

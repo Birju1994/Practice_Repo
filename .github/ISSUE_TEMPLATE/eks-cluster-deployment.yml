@@ -1,0 +1,189 @@
+name: EKS Cluster - Deployment
+description: Issue template to create an Amazon EKS cluster
+title: "EKS Cluster - Deplaoyment"
+labels:
+  - eks-clsuter-deployemnt
+body:
+
+  - type: markdown
+    attributes:
+      value:  |
+        ### Create Amazon EKS Cluster - Change Request
+        Use this tepmplate to request a new Amazon EKS Cluster.
+
+        > Conditional fields ('fargate_profile_name', 'fargate_namesapce', 'pod_execution_role', 'fargate_subnet_ids') are **mandaotry when 'node_type' is 'fargate' or 'Hybrid' ** and may be left blank otherwise.
+
+  - type: input
+    id: RITM
+    attributes:
+      label: RITM
+      description: "Mandatory. Approved request identifier from ServiceNow."
+      placeholder: RITM1234567
+    validations:
+      required: true
+
+  - type: dropdown
+    id: dso
+    attributes: 
+      label: DSO
+      description: Delivery Service Organization responsible for the request.
+      options:
+        - Client
+        - Self Test
+        - Project
+    validations: 
+      required: true
+
+  - type: dropdown
+    id: account
+    attributes:
+      label: account
+      description: Choose the target AWS account (AWS_account_id). Access to the account is validated before planning.
+      options: 
+        - Non-Prod
+        - prod
+        - brijendraaws
+    validations: 
+      required: true
+  
+  - type: dropdown
+    id: Region
+    attributes:
+      label: Region
+      description: Supported AWS region for the EKS Cluster.
+      options:
+        - eu-west-1
+        - eu-central-1
+        - ap-south-1
+    validations:
+      required: true
+  
+  - type: dropdown
+    id: ENvironment
+    attributes:
+      label: Environment
+      description: Target environment for the cluster
+      options: 
+        - dev
+        - test
+        - uat
+        - nonprod
+        - prod
+    validations:
+      required: true
+  
+  - type: input 
+    id: cluster_name
+    attributes: 
+      label: cluster_name
+      description: Must be unique within the account.
+      placeholder: eks-dev-01
+    validations:
+      required: true
+  
+  - type: dropdown
+    id: kubernetes_version
+    attributes: 
+      label: kubernetes_version
+      description: Supported Amazon EKS Kubernetes versions.
+      options:
+        - "1.31"
+        - "1.30"
+        - "1,29"
+        - "1.28"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: node_type
+    attributes:
+      label: node_type
+      description: "Compute dpeloyment model."
+      options:
+        - Managed_Nodes
+        - Fargate
+        - Hybrid
+    validations:
+      required: true
+
+  - type: input
+    id: node_count
+    attributes:
+      label: node_count
+      description: "Manadatory numeric value."
+      placeholder: "2"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: instance_type
+    attributes:
+      label: instance_type
+      description: Valid EC2 instance type for maanaged node group worker nodes.
+      options:
+        - t3.medium
+        - t3.micro
+        - t3.large
+    validations:
+      required: true
+  
+  - type: input
+    id: vpc_id
+    attributes:
+      label: vpc_id
+      description: "Manadatory. Target VPC for the cluster"
+      placeholder: "vpc-0123456789abcdef0"
+    validations:
+      required: true
+  
+  - type: input
+    id: subnet_id
+    attributes:
+      label: subnet_id
+      description: "Manadatory. Comma-seprated list of the cluster subnet IDs."
+      placeholder: "subnet-0123456789bcdef0, subnet-0abcdef1234567890 "
+    validations:
+      required: true
+
+  - type: input
+    id: fargate_namespace
+    attributes:
+      label: fargate_namespace
+      description: "Conditional. Required when node_type is Fargate or Hybrid."
+      placeholder: "application, jobs"
+    validations:
+      required: false
+
+  - type: input
+    id: pod_execution_rule
+    attributes:
+      label: pod_execution_rule
+      description: "Conditional. Required when node_type is Fargate or Hybrid."
+      placeholder: "arn:aws:iam::1234556789012:role/eks-fargate-pod-execution-role"
+    validations:
+      required: false
+
+  - type: input
+    id: fargate_subnet_ids
+    attributes:
+      label: fargate_subnet_ids
+      description: "Conditional. Required when node_type is Fargate or Hybrid."
+      placeholder: subnet-1234556789012, subnet-1234556789012n"
+    validations:
+      required: false
+      
+  - type: markdown
+    attributes:
+      value: |
+        ### Approval 
+        Add the **' approved' ** label to approve this request.
+
+
+
+
+
+
+
+
+
+
