@@ -1,13 +1,30 @@
+
+name: AWS OIDC Authentication Test
+
 on:
-  issues:
-    types: [opened]
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
-  extract-data:
+  aws-authentication:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Display Issue Details
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::314201982961:role/GitHubActionsTerraformRole
+          aws-region: ap-south-1
+
+      - name: Verify AWS Identity
         run: |
-          echo "Issue Number: ${{ github.event.issue.number }}"
-          echo "Issue Title: ${{ github.event.issue.title }}"
+          aws sts get-caller-identity
